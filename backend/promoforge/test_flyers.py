@@ -33,6 +33,7 @@ class FlyerProjectTests(APITestCase):
         self.assertEqual(self.client.get(url).data['design'], self.payload['design'])
         summary = self.client.get('/api/flyers/').data['results'][0]
         self.assertEqual(summary['name'], self.payload['name'])
+        self.assertEqual(summary['kind'], 'flyer')
         self.assertNotIn('products', summary)
         self.payload['products'][0]['price'] = '17,90'
         self.assertEqual(self.client.put(url, self.payload, format='json').status_code, 200)
@@ -40,6 +41,7 @@ class FlyerProjectTests(APITestCase):
 
         self.client.force_authenticate(self.other)
         self.assertEqual(self.client.get('/api/flyers/').data['count'], 0)
+        self.assertEqual(self.client.get('/api/flyers/?kind=all').data['count'], 0)
         self.assertEqual(self.client.get(url).status_code, 404)
         self.assertEqual(self.client.put(url, self.payload, format='json').status_code, 404)
 
@@ -60,11 +62,13 @@ class FlyerProjectTests(APITestCase):
         self.client.force_authenticate(self.owner)
         self.payload['design'].update(template='professional', storeName='Minha Loja', border='strong', badge='burst')
         self.payload['design'].update(logoScale=160, storeNameColor='#226644', subtitleColor='#889966', categoryTextColor='#ffee44')
+        self.payload['design']['lockedLayers'] = ['logo']
         self.payload['design']['layerPositions'] = {
             layer: {'x': -25, 'y': 40}
             for layer in ('logo', 'storeName', 'subtitle', 'category', 'backgroundImage')
         }
         self.payload['products'][0]['featured'] = True
+        self.payload['products'][0]['lockedLayers'] = ['photo', 'offer']
         self.payload['products'][0].update(photoScale=160, photoX=20, photoY=-15, detailPhotos=['https://example.com/detail.png'], offerLabel='SUPER OFERTA')
         self.payload['products'][0].update(offerColor='#6837ad', discountColor='#ffd635', oldPriceColor='#557799')
         self.payload['products'][0]['textPositions'] = {
@@ -128,6 +132,7 @@ class FlyerProjectTests(APITestCase):
         self.assertEqual(self.client.get(url).data['design']['video'], self.payload['design']['video'])
         self.assertEqual(self.client.get(url).data['products'][0]['duration'], 3)
         self.assertEqual(self.client.get('/api/flyers/?kind=video').data['count'], 1)
+        self.assertEqual(self.client.get('/api/flyers/?kind=all').data['results'][0]['kind'], 'video')
         self.assertEqual(self.client.get('/api/flyers/?kind=print').data['count'], 0)
         self.assertEqual(self.client.get('/api/flyers/').data['count'], 0)
         self.payload['products'][0]['duration'] = 0

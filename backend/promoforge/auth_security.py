@@ -61,7 +61,9 @@ def client_ip(request):
 
 def check_auth_origin(request):
     origin = request.META.get('HTTP_ORIGIN')
-    if origin and origin != f'{request.scheme}://{request.get_host()}' and origin not in settings.CORS_ALLOWED_ORIGINS:
+    if not origin and not settings.ON_RENDER:
+        return
+    if origin != f'{request.scheme}://{request.get_host()}' and origin not in settings.CORS_ALLOWED_ORIGINS:
         raise PermissionDenied('Origem da solicitação não autorizada.')
 
 

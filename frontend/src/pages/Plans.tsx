@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiRequest, getErrorMessage, useAuth } from '../auth'
-import type { Billing, Plan } from '../billing'
+import { creditCost, type Billing, type Plan } from '../billing'
 import { BrandLink } from '../components/Brand'
 import { Check } from 'lucide-react'
 
@@ -28,19 +28,23 @@ const paymentLabels: Record<string, string> = {
 
 const checkoutStatusId = 'test-checkout-status'
 const basicBenefits = [
-  'Banners individuais e em massa · 1 crédito por arte',
-  'Encartes, cartazes, folhas de etiquetas e vídeos · 2 créditos por página ou vídeo',
-  'Até 5 artes por lote e 10 créditos compartilhados por mês',
+  'Banners, encartes, cartazes, etiquetas e vídeos',
+  'Remoção de fundo',
   'Templates básicos, PNG e vídeo conforme o navegador',
 ]
 const paidBenefits = [
   'Banners, encartes, cartazes, etiquetas e vídeos',
   'Templates básicos e Oferta Profissional',
-  'Remoção automática de fundo',
+  'Remoção de fundo',
   'PNG, JPG e PDF. MP4 quando o navegador é compatível',
   'Artes sem marca d’água',
   'Geração e exportação em massa',
 ]
+
+const creditUnits = {
+  banner: 'banner', flyer: 'página de encarte', poster: 'página de cartaz',
+  labels: 'folha de etiquetas', video: 'vídeo', cutout: 'recorte',
+} as const
 
 export function PlansPage() {
   const { accessToken, syncPlan } = useAuth()
@@ -149,9 +153,19 @@ export function PlansPage() {
               {[
                 ...(plan.code === 'free' ? basicBenefits : paidBenefits),
                 plan.limits?.stores === 1 || plan.code === 'free' ? '1 identidade visual de loja' : `Até ${plan.limits?.stores ?? (plan.code === 'business' ? 10 : 3)} identidades visuais de lojas`,
-                ...(plan.code === 'business' ? ['Limite ampliado por lote', 'Templates de banner personalizados e reutilizáveis', 'Organização de campanhas por loja'] : []),
+                `Até ${number.format(Math.min(plan.limits?.batch ?? (plan.code === 'free' ? 5 : plan.code === 'pro' ? 50 : 100), 100))} banners por lote no editor`,
+                ...(plan.code === 'business' ? ['Templates de banner personalizados e reutilizáveis', 'Organização de campanhas por loja'] : []),
               ].map(benefit => <li className="flex items-start gap-2" key={benefit}><Check size={16} className="mt-0.5 shrink-0 text-emerald-600" aria-hidden />{benefit}</li>)}
             </ul>
+            <details className="text-sm">
+              <summary className="cursor-pointer font-semibold">Consumo de créditos</summary>
+              <ul className="mt-2 space-y-1">
+                {(Object.keys(creditUnits) as (keyof typeof creditUnits)[]).map(kind => {
+                  const cost = plan.costs?.[kind] ?? creditCost(kind, plan.code)
+                  return <li key={kind}>{cost} {cost === 1 ? 'crédito' : 'créditos'} por {creditUnits[kind]}</li>
+                })}
+              </ul>
+            </details>
             {plan.code !== 'free' && (!checkoutAvailable || !subscriptionOpen || resumablePlan === plan.code) && (
               <button
                 className={`mt-5 ${button}`}

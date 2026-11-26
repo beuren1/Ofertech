@@ -1,7 +1,8 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AuthProvider } from './auth'
+import { DashboardLayout } from './components/Layout'
 import { DashboardPage } from './pages/Dashboard'
 
 afterEach(() => {
@@ -52,6 +53,8 @@ describe('saved campaigns dashboard', () => {
           }],
         })
       }
+      if (url.endsWith('/flyers/?kind=all')) return jsonResponse({ results: [{ id: 21, name: 'Vídeo da loja', kind: 'video', updated_at: '2026-11-25T12:00:00Z' }] })
+      if (url.endsWith('/billing/')) return jsonResponse({ credits: 7 })
       if (url.endsWith('/campaigns/12/') && init?.method === 'PATCH') {
         campaignName = String(JSON.parse(String(init.body)).name)
         return jsonResponse({ id: 12, name: campaignName })
@@ -59,17 +62,24 @@ describe('saved campaigns dashboard', () => {
       throw new Error(`Unexpected request: ${url}`)
     })
     vi.stubGlobal('fetch', fetchMock)
+    vi.stubGlobal('localStorage', { getItem: vi.fn(), setItem: vi.fn() })
 
     render(
       <MemoryRouter>
         <AuthProvider>
-          <DashboardPage />
+          <DashboardLayout><DashboardPage /></DashboardLayout>
         </AuthProvider>
       </MemoryRouter>,
     )
 
     expect(await screen.findByRole('heading', { name: /Pessoa Autenticada/ })).toBeTruthy()
-    expect(await screen.findByText('Campanha de teste')).toBeTruthy()
+    await waitFor(() => expect(screen.getByRole('link', { name: /Créditos restantes/ }).textContent).toContain('7'))
+    expect(within(screen.getByRole('navigation', { name: 'Atalhos dos geradores' })).getAllByRole('link')).toHaveLength(5)
+    const saved = within(screen.getByRole('region', { name: 'Minhas campanhas' }))
+    expect(await saved.findByText('Campanha de teste')).toBeTruthy()
+    const recent = within(screen.getByRole('region', { name: 'Projetos recentes' }))
+    expect((await recent.findByRole('link', { name: 'Continuar editando Vídeo da loja' })).getAttribute('href')).toBe('/videos?project_id=21')
+    expect(recent.getByRole('link', { name: 'Continuar editando Campanha de teste' }).getAttribute('href')).toBe('/bulk?campaign_id=12&batch_id=test-batch')
     expect(screen.getByText(/1 artes · criada/)).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: /Renomear/ }))
@@ -77,7 +87,7 @@ describe('saved campaigns dashboard', () => {
       target: { value: 'Campanha renomeada' },
     })
     fireEvent.click(screen.getByRole('button', { name: 'Salvar nome' }))
-    expect(await screen.findByText('Campanha renomeada')).toBeTruthy()
+    expect(await saved.findByText('Campanha renomeada')).toBeTruthy()
 
     fireEvent.change(screen.getByLabelText('Ordenar campanhas'), { target: { value: 'created_at' } })
     await waitFor(() => {

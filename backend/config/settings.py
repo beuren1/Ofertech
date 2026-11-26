@@ -27,18 +27,28 @@ if len(SECRET_KEY) < 50 or len(set(SECRET_KEY)) < 5 or SECRET_KEY.startswith('dj
 
 DEBUG = env_bool('DJANGO_DEBUG')
 ALLOWED_HOSTS = [host.strip() for host in os.getenv('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',') if host.strip()]
+ON_RENDER = env_bool('RENDER')
+RENDER_HOST = os.getenv('RENDER_EXTERNAL_HOSTNAME', '').strip().lower()
+if ON_RENDER:
+    if DEBUG or any(host == '*' or host.startswith('.') for host in ALLOWED_HOSTS):
+        raise ImproperlyConfigured('O Render exige DJANGO_DEBUG=False e hosts explícitos.')
+    if RENDER_HOST and RENDER_HOST not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(RENDER_HOST)
 
 TUNNEL_HOST = os.getenv('DJANGO_TUNNEL_HOST', '').strip().lower()
+if ON_RENDER and TUNNEL_HOST:
+    raise ImproperlyConfigured('Remova a configuração do túnel Cloudflare do serviço Render.')
 if TUNNEL_HOST and (DEBUG or TUNNEL_HOST not in ALLOWED_HOSTS or any(
     host == '*' or host.startswith('.') for host in ALLOWED_HOSTS
 )):
     raise ImproperlyConfigured('O túnel exige DJANGO_DEBUG=False e hosts explícitos em DJANGO_ALLOWED_HOSTS.')
 
-SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https') if TUNNEL_HOST else None
-SECURE_SSL_REDIRECT = bool(TUNNEL_HOST)
-SECURE_HSTS_SECONDS = int(os.getenv('DJANGO_HSTS_SECONDS', '300')) if TUNNEL_HOST else 0
-SESSION_COOKIE_SECURE = bool(TUNNEL_HOST)
-CSRF_COOKIE_SECURE = bool(TUNNEL_HOST)
+SECURE_SSL_REDIRECT = ON_RENDER or bool(TUNNEL_HOST)
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https') if SECURE_SSL_REDIRECT else None
+SECURE_REDIRECT_EXEMPT = [r'^api/health/$'] if ON_RENDER else []
+SECURE_HSTS_SECONDS = int(os.getenv('DJANGO_HSTS_SECONDS', '300')) if SECURE_SSL_REDIRECT else 0
+SESSION_COOKIE_SECURE = SECURE_SSL_REDIRECT
+CSRF_COOKIE_SECURE = SECURE_SSL_REDIRECT
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -85,8 +95,14 @@ DATABASES = {
         default='sqlite:///db.sqlite3',
         env='DATABASE_URL',
         conn_max_age=600,
+        conn_health_checks=True,
     )
 }
+if ON_RENDER:
+    database = DATABASES['default']
+    if database['ENGINE'] != 'django.db.backends.postgresql' or not database.get('HOST') or not database.get('NAME'):
+        raise ImproperlyConfigured('Configure DATABASE_URL com o PostgreSQL do Render.')
+    database.setdefault('OPTIONS', {}).setdefault('connect_timeout', 3)
 
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
@@ -103,6 +119,8 @@ STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = Path(os.getenv('DJANGO_MEDIA_ROOT', BASE_DIR / 'media'))
+if ON_RENDER and RENDER_HOST and ('DJANGO_MEDIA_ROOT' not in os.environ or not MEDIA_ROOT.is_absolute()):
+    raise ImproperlyConfigured('Configure DJANGO_MEDIA_ROOT com um caminho absoluto no disco persistente.')
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 REST_FRAMEWORK = {
@@ -168,7 +186,7 @@ except ValueError as error:
 if any(network.prefixlen == 0 for network in TRUSTED_AUTH_PROXY_NETWORKS):
     raise ImproperlyConfigured('A lista de proxies de autenticação exige redes restritas.')
 
-CORS_ALLOWED_ORIGINS = [
+CORS_ALLOWED_ORIGINS = [] if ON_RENDER else [
     'http://localhost:5173',
     'http://127.0.0.1:5173',
 ]

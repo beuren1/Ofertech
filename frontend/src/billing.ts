@@ -1,8 +1,8 @@
-import { apiRequest } from './auth'
+import { apiRequest, canRetryApiRequest } from './auth'
 
 export const CREDIT_BALANCE_CHANGED = 'ofertei:credit-balance-changed'
 
-export type Plan = { code: string; name: string; monthly_price: string; monthly_credits: number; limits?: { stores: number; batch: number; features: string[]; formats: string[] } }
+export type Plan = { code: string; name: string; monthly_price: string; monthly_credits: number; limits?: { stores: number; batch: number; features: string[]; formats: string[] }; costs?: Record<keyof typeof CREDIT_COSTS, number> }
 
 export type Billing = {
   plan: Plan
@@ -38,7 +38,7 @@ export async function confirmArtworks(token: string, key: string, artworks: Blob
   try {
     await request()
   } catch (reason) {
-    if (!(reason instanceof TypeError || reason instanceof SyntaxError)) throw reason
+    if (!canRetryApiRequest(reason)) throw reason
     await request()
   }
   window.dispatchEvent(new Event(CREDIT_BALANCE_CHANGED))
@@ -61,7 +61,7 @@ export async function creditOperation(token: string, operation: CreditOperation,
   }
   const request = () => apiRequest('billing/operations/', { method: 'POST', accessToken: token, body })
   const result = await request().catch(error => {
-    if (!file || !(error instanceof TypeError || error instanceof SyntaxError)) throw error
+    if (!file || !canRetryApiRequest(error)) throw error
     return request()
   })
   if (file) window.dispatchEvent(new Event(CREDIT_BALANCE_CHANGED))

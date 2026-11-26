@@ -1,9 +1,17 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Clock3, Copy, Pencil, Plus, Sparkles, Trash2 } from 'lucide-react'
+import { ArrowRight, Clock3, Coins, Copy, Pencil, Plus, Sparkles, Trash2 } from 'lucide-react'
 import { apiBlobRequest, apiRequest, getErrorMessage, useAuth } from '../auth'
 import { campaignThumbnailContentPath, type CampaignListResponse, type SavedCampaign } from '../campaigns'
 import { listStoreBrands, type StoreBrand } from '../stores'
+import { editorLinks, useDashboardCredits } from '../components/Layout'
+import type { FlyerSummary } from '../flyers'
+
+const projectTypes = {
+  flyer: { path: '/flyers', label: 'Encarte' },
+  print: { path: '/print', label: 'Impressão' },
+  video: { path: '/videos', label: 'Vídeo' },
+}
 
 function campaignUrl(campaign: SavedCampaign) {
   if (!campaign.batch_id && campaign.artworks.length === 1) return `/generator?campaign_id=${campaign.id}`
@@ -70,8 +78,13 @@ function CampaignThumbnail({ campaign, accessToken }: {
 
 export function DashboardPage() {
   const { user, accessToken } = useAuth()
+  const credits = useDashboardCredits()
   const navigate = useNavigate()
   const [campaigns, setCampaigns] = useState<SavedCampaign[]>([])
+  const [recentCampaigns, setRecentCampaigns] = useState<SavedCampaign[]>([])
+  const [projects, setProjects] = useState<FlyerSummary[]>([])
+  const [projectsLoading, setProjectsLoading] = useState(true)
+  const [projectsError, setProjectsError] = useState('')
   const [order, setOrder] = useState<'updated_at' | 'created_at'>('updated_at')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -83,16 +96,23 @@ export function DashboardPage() {
   const business = user?.profile.plan === 'business'
   const startPath = user?.profile.plan === 'free' ? '/generator' : '/bulk'
 
-  const loadCampaigns = useCallback(async () => {
+  const loadCampaigns = useCallback(async (refreshRecent = false) => {
     if (!accessToken) return
     setLoading(true)
     setError(null)
     try {
+      const activeFilter = business ? storeFilter : ''
+      const latest = order === 'updated_at' && !activeFilter
       const result = await apiRequest<CampaignListResponse>(
-        `campaigns/?ordering=-${order}${business && storeFilter ? `&store_brand=${encodeURIComponent(storeFilter)}` : ''}`,
+        `campaigns/?ordering=-${order}${activeFilter ? `&store_brand=${encodeURIComponent(activeFilter)}` : ''}`,
         { accessToken },
       )
       setCampaigns(result.results)
+      if (latest) setRecentCampaigns(result.results)
+      if (!latest && refreshRecent) {
+        const recent = await apiRequest<CampaignListResponse>('campaigns/?ordering=-updated_at', { accessToken })
+        setRecentCampaigns(recent.results)
+      }
     } catch (reason) {
       setError(getErrorMessage(reason))
     } finally {
@@ -114,7 +134,7 @@ export function DashboardPage() {
     setBusyCampaignId(campaign.id)
     try {
       await apiRequest(`campaigns/${campaign.id}/`, { method: 'PATCH', accessToken, body: { store_brand: store ? Number(store) : null } })
-      await loadCampaigns()
+      await loadCampaigns(true)
     } catch (reason) {
       setError(getErrorMessage(reason))
     } finally {
@@ -125,6 +145,21 @@ export function DashboardPage() {
   useEffect(() => {
     void loadCampaigns()
   }, [loadCampaigns])
+
+  useEffect(() => {
+    if (!accessToken) return
+    let active = true
+    setProjectsLoading(true)
+    setProjectsError('')
+    void apiRequest<{ results: FlyerSummary[] }>('flyers/?kind=all', { accessToken }).then(result => {
+      if (active) setProjects(result.results)
+    }).catch(reason => {
+      if (active) setProjectsError(getErrorMessage(reason))
+    }).finally(() => {
+      if (active) setProjectsLoading(false)
+    })
+    return () => { active = false }
+  }, [accessToken])
 
   const renameCampaign = async (campaign: SavedCampaign) => {
     if (!editName.trim()) {
@@ -140,7 +175,7 @@ export function DashboardPage() {
         body: { name: editName.trim() },
       })
       setEditingId(null)
-      await loadCampaigns()
+      await loadCampaigns(true)
     } catch (reason) {
       setError(getErrorMessage(reason))
     } finally {
@@ -156,7 +191,7 @@ export function DashboardPage() {
         `campaigns/${campaign.id}/duplicate/`,
         { method: 'POST', accessToken: accessToken || undefined, body: {} },
       )
-      await loadCampaigns()
+      await loadCampaigns(true)
       navigate(campaignUrl(duplicate))
     } catch (reason) {
       setError(getErrorMessage(reason))
@@ -175,6 +210,7 @@ export function DashboardPage() {
         accessToken: accessToken || undefined,
       })
       setCampaigns(current => current.filter(item => item.id !== campaign.id))
+      setRecentCampaigns(current => current.filter(item => item.id !== campaign.id))
     } catch (reason) {
       setError(getErrorMessage(reason))
     } finally {
@@ -182,7 +218,13 @@ export function DashboardPage() {
     }
   }
 
-  const artworkCount = campaigns.reduce((total, campaign) => total + campaign.artworks.length, 0)
+  const recent = [
+    ...recentCampaigns.map(campaign => ({ key: `campaign-${campaign.id}`, name: campaign.name, date: campaign.updated_at, to: campaignUrl(campaign), label: 'Campanha' })),
+    ...projects.map(project => {
+      const type = projectTypes[project.kind ?? 'flyer']
+      return { key: `project-${project.id}`, name: project.name, date: project.updated_at, to: `${type.path}?project_id=${project.id}`, label: type.label }
+    }),
+  ].sort((a, b) => Date.parse(b.date) - Date.parse(a.date)).slice(0, 5)
 
   return (
     <div className="mx-auto max-w-7xl">
@@ -196,21 +238,33 @@ export function DashboardPage() {
         </Link>
       </div>
 
-      <section className="mt-8 grid gap-4 sm:grid-cols-2">
-        <article className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-          <p className="text-sm font-medium text-slate-500">Campanhas salvas</p>
-          <p className="mt-3 text-3xl font-black">{loading ? '…' : campaigns.length}</p>
-        </article>
-        <article className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-          <p className="text-sm font-medium text-slate-500">Artes nas campanhas</p>
-          <p className="mt-3 text-3xl font-black">{loading ? '…' : artworkCount}</p>
-        </article>
+      <section className="mt-8 grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+        <Link to="/plans" className="rounded-2xl border border-indigo-200 bg-indigo-50 p-5 text-indigo-950 hover:border-indigo-500 dark:border-indigo-800 dark:bg-indigo-950 dark:text-indigo-100">
+          <span className="flex items-center gap-2 text-sm font-semibold"><Coins aria-hidden="true" size={18} /> Créditos restantes</span>
+          <span aria-live="polite" className="mt-3 block text-3xl font-black">{credits === undefined ? '—' : credits.toLocaleString('pt-BR')}</span>
+          <span className="mt-3 inline-flex items-center gap-2 text-sm font-semibold">Ver planos e consumo <ArrowRight aria-hidden="true" size={16} /></span>
+        </Link>
+        <nav aria-label="Atalhos dos geradores" className="grid grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-white p-3 sm:grid-cols-3 dark:border-slate-800 dark:bg-slate-900">
+          {editorLinks.map(({ to, label, icon: Icon }) => <Link key={to} to={to} className="flex min-w-0 items-center gap-2 rounded-xl p-2 text-sm font-semibold hover:bg-indigo-50 dark:hover:bg-slate-800"><Icon aria-hidden="true" size={19} className="shrink-0 text-indigo-600 dark:text-indigo-300" />{label}</Link>)}
+        </nav>
       </section>
 
-      <section className="mt-8">
+      <section aria-labelledby="recent-projects" className="mt-8 rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 dark:border-slate-800 dark:bg-slate-900">
+        <h2 id="recent-projects" className="text-xl font-black">Projetos recentes</h2>
+        {projectsError && <p role="status" className="mt-2 text-sm text-rose-700 dark:text-rose-300">Não foi possível carregar encartes, impressões e vídeos. {projectsError}</p>}
+        {recent.length === 0 && <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{loading || projectsLoading ? 'Carregando projetos…' : 'Seus projetos aparecerão aqui depois de salvos.'}</p>}
+        <ul className="divide-y divide-slate-200 dark:divide-slate-800">
+          {recent.map(project => <li key={project.key} className="flex flex-wrap items-center justify-between gap-2 py-3">
+            <div className="min-w-0"><p className="break-words font-semibold">{project.name}</p><p className="text-sm text-slate-500 dark:text-slate-400">{project.label} · {formatDate(project.date)}</p></div>
+            <Link to={project.to} aria-label={`Continuar editando ${project.name}`} className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-slate-800">Continuar editando <ArrowRight aria-hidden="true" size={16} /></Link>
+          </li>)}
+        </ul>
+      </section>
+
+      <section className="mt-8" aria-labelledby="saved-campaigns">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h2 className="text-2xl font-black">Minhas campanhas</h2>
+            <h2 id="saved-campaigns" className="text-2xl font-black">Minhas campanhas</h2>
             <p className="mt-1 text-sm text-slate-500">Suas artes, fotos e configurações salvas automaticamente.</p>
           </div>
           {business && <label className="text-sm font-semibold">Filtrar por loja

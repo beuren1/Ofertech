@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 
 const localApiHost = globalThis.location?.hostname === '127.0.0.1' ? '127.0.0.1' : 'localhost'
-const API_URL = import.meta.env.VITE_API_URL || `http://${localApiHost}:8000/api`
+const API_URL = (import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '/api' : `http://${localApiHost}:8000/api`)).replace(/\/+$/, '')
 
 export type AuthUser = {
   id: number
@@ -24,6 +24,11 @@ class ApiError extends Error {
   }
 }
 
+export function canRetryApiRequest(reason: unknown) {
+  return reason instanceof TypeError || reason instanceof SyntaxError
+    || (reason instanceof ApiError && (reason.status === 0 || (reason.status >= 200 && reason.status < 300)))
+}
+
 function errorMessage(payload: unknown): string {
   if (typeof payload === 'string') return payload
   if (payload && typeof payload === 'object') {
@@ -36,12 +41,28 @@ function errorMessage(payload: unknown): string {
   return 'Não foi possível concluir a solicitação. Tente novamente.'
 }
 
+async function fetchApi(path: string, init: RequestInit): Promise<Response> {
+  let response: Response
+  try {
+    response = await fetch(`${API_URL}/${path}`, init)
+  } catch {
+    throw new ApiError('Não foi possível conectar à Ofertech. Verifique sua conexão e tente novamente.', 0)
+  }
+  if (response.status >= 500) {
+    throw new ApiError('O servidor da Ofertech está indisponível no momento. Tente novamente em instantes.', response.status)
+  }
+  if (path === 'auth/login/' && response.status === 401) {
+    throw new ApiError('E-mail ou senha inválidos.', 401)
+  }
+  return response
+}
+
 export async function apiRequest<T>(
   path: string,
   options: { method?: string; body?: unknown; accessToken?: string } = {},
 ): Promise<T> {
   const isUpload = options.body instanceof FormData
-  const response = await fetch(`${API_URL}/${path}`, {
+  const response = await fetchApi(path, {
     method: options.method ?? 'GET',
     credentials: 'include',
     headers: {
@@ -67,19 +88,15 @@ export async function apiUpload<T>(
 ): Promise<T> {
   const form = new FormData()
   form.append('file', file)
-  const response = await fetch(`${API_URL}/${path}`, {
+  return apiRequest<T>(path, {
     method: 'POST',
-    credentials: 'include',
-    headers: { Authorization: `Bearer ${accessToken}` },
+    accessToken,
     body: form,
   })
-  const payload: unknown = await response.json()
-  if (!response.ok) throw new ApiError(errorMessage(payload), response.status)
-  return payload as T
 }
 
 export async function apiBlobRequest(path: string, accessToken: string): Promise<Blob> {
-  const response = await fetch(`${API_URL}/${path}`, {
+  const response = await fetchApi(path, {
     credentials: 'include',
     headers: { Authorization: `Bearer ${accessToken}` },
   })

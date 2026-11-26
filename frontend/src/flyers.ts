@@ -34,6 +34,7 @@ export type FlyerDesign = {
   logo: string
   backgroundImage: string
   layerPositions?: FlyerDesignPositions
+  lockedLayers?: FlyerDesignLayer[]
   headerTextColor?: string
   storeNameColor?: string
   subtitleColor?: string
@@ -58,9 +59,10 @@ export type FlyerProduct = Required<Pick<BulkProduct, 'name' | 'category' | 'pri
   discountTextColor?: string
   oldPriceColor?: string
   textPositions?: FlyerTextPositions
+  lockedLayers?: FlyerLayer[]
 }
 export type Flyer = { name: string; design: FlyerDesign; products: FlyerProduct[] }
-export type FlyerSummary = { id: number; name: string; updated_at: string }
+export type FlyerSummary = { id: number; name: string; updated_at: string; kind?: 'flyer' | 'print' | 'video' }
 type OptionalLegacyDesign = 'storeName' | 'border' | 'badge'
 export type SavedFlyer = Omit<Flyer, 'design'> & FlyerSummary & {
   design: Omit<FlyerDesign, OptionalLegacyDesign> & Partial<Pick<FlyerDesign, OptionalLegacyDesign>>

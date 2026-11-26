@@ -393,7 +393,6 @@ class PromoForgeApiTests(APITestCase):
 
             content_response = self.client.get(f'/api/stores/{store_id}/logo/content/')
             content = b''.join(content_response.streaming_content)
-            content_response.close()
             self.assertEqual(content, b'\x89PNG\r\n\x1a\nconteudo de imagem')
             self.assertEqual(content_response['X-Content-Type-Options'], 'nosniff')
 
@@ -479,7 +478,6 @@ class PromoForgeApiTests(APITestCase):
             content_path = f'/api/campaigns/{campaign_id}/assets/{asset_id}/content/'
             content_response = self.client.get(content_path)
             content = b''.join(content_response.streaming_content)
-            content_response.close()
             self.assertEqual(content, b'\x89PNG\r\n\x1a\nconteudo de teste')
             self.client.force_authenticate(other_user)
             self.assertEqual(self.client.get(content_path).status_code, 404)

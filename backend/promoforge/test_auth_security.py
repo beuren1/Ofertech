@@ -155,6 +155,26 @@ class PasswordSecurityTests(APITestCase):
         self.assertEqual(self.reset_request(self.account.email, HTTP_ORIGIN='https://other.example.test').status_code, 403)
         self.assertFalse(AuthRateWindow.objects.exists())
 
+    @override_settings(ON_RENDER=True, SESSION_COOKIE_SECURE=True, CORS_ALLOWED_ORIGINS=['https://ofertech.vercel.app'])
+    def test_render_cookie_endpoints_require_trusted_origin(self):
+        for endpoint in ('login', 'refresh', 'logout', 'register', 'password-reset', 'password-reset/confirm'):
+            for origin in ({}, {'HTTP_ORIGIN': 'null'}, {'HTTP_ORIGIN': 'https://other.example.test'}):
+                response = self.client.post(f'/api/auth/{endpoint}/', {}, **origin)
+                self.assertEqual(response.status_code, 403)
+
+        origin = {'HTTP_ORIGIN': 'https://ofertech.vercel.app'}
+        response = self.login(**origin)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Access-Control-Allow-Origin'], origin['HTTP_ORIGIN'])
+        cookie = response.cookies['promoforge_refresh']
+        self.assertTrue(cookie['secure'])
+        self.assertTrue(cookie['httponly'])
+        self.assertEqual(cookie['samesite'], 'Lax')
+        self.assertEqual(cookie['path'], '/api/auth/')
+        self.assertFalse(cookie['domain'])
+        self.assertEqual(self.client.post('/api/auth/refresh/', {}, **origin).status_code, 200)
+        self.assertEqual(self.client.post('/api/auth/logout/', {}, **origin).status_code, 205)
+
     def test_email_login_supports_django_accounts_and_shares_the_username_limit(self):
         self.account.username = 'cliente-django'
         self.account.save(update_fields=['username'])

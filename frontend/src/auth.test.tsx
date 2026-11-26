@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { AuthProvider } from './auth'
+import { apiRequest, AuthProvider } from './auth'
 import { AuthPage } from './pages/Auth'
 
 function jsonResponse(payload: unknown, status = 200) {
@@ -11,6 +11,22 @@ function jsonResponse(payload: unknown, status = 200) {
     json: async () => payload,
   }
 }
+
+afterEach(() => vi.unstubAllGlobals())
+
+describe('API errors', () => {
+  it.each([
+    [0, /não foi possível conectar/i],
+    [502, /servidor da Ofertech está indisponível/i],
+    [401, /e-mail ou senha inválidos/i],
+  ])('shows the appropriate login error for %s', async (status, message) => {
+    const fetchMock = vi.fn()
+    if (status === 0) fetchMock.mockRejectedValue(new TypeError('Failed to fetch'))
+    else fetchMock.mockResolvedValue({ status, ok: false, json: async () => { throw new SyntaxError() } })
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(apiRequest('auth/login/', { method: 'POST' })).rejects.toThrow(message)
+  })
+})
 
 describe('authentication form', () => {
   it('creates an account through the API and authenticates it', async () => {

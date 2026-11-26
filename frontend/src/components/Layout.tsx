@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { Link, NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, WandSparkles, Library, History, CreditCard, Settings,
@@ -8,19 +8,28 @@ import { apiRequest, useAuth } from '../auth'
 import { CREDIT_BALANCE_CHANGED, type Billing } from '../billing'
 import { BrandLink } from './Brand'
 
-const nav = [
-  { to: '/dashboard', label: 'Visão geral', icon: LayoutDashboard },
+export const editorLinks = [
   { to: '/generator', label: 'Criar promoção', icon: WandSparkles },
   { to: '/bulk', label: 'Criação em massa', icon: Sparkles },
   { to: '/flyers', label: 'Criar Encarte', icon: Newspaper },
   { to: '/print', label: 'Criar Cartaz', icon: Printer },
   { to: '/videos', label: 'Criar Vídeo', icon: Video },
+]
+
+const nav = [
+  { to: '/dashboard', label: 'Visão geral', icon: LayoutDashboard },
+  ...editorLinks,
   { to: '/store', label: 'Minha loja', icon: Store },
   { to: '/templates', label: 'Templates', icon: Library },
   { to: '/history', label: 'Histórico', icon: History },
 ]
 
 const creditNumber = new Intl.NumberFormat('pt-BR')
+const CreditsContext = createContext<number | undefined>(undefined)
+
+export function useDashboardCredits() {
+  return useContext(CreditsContext)
+}
 
 export function DashboardLayout({ children }: { children: ReactNode }) {
   const [dark, setDark] = useState(() => localStorage.getItem('theme') === 'dark')
@@ -114,7 +123,7 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
           </div>
         </header>
         {error && <p role="alert" className="px-4 pt-3 text-sm text-red-600 sm:px-8">{error}</p>}
-        <main className="p-4 sm:p-8">{children}</main>
+        <main className="p-4 sm:p-8"><CreditsContext.Provider value={credits}>{children}</CreditsContext.Provider></main>
       </div>
     </div>
   )

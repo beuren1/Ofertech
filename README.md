@@ -9,11 +9,14 @@ A Ofertech permite criar, editar e salvar banners, encartes, cartazes, etiquetas
 O Django é a fonte de permissões e cotas dos planos. No Grátis, os 10
 créditos mensais são compartilhados entre os geradores. Banners individuais
 e em massa custam 1 crédito por arte. Encartes, cartazes e etiquetas custam
-2 por página ou folha, e vídeos custam 2 por exportação. O limite do Grátis
-é de 5 artes por lote. A remoção de fundo custa 1 crédito por recorte concluído em todos os planos.
+2 por página ou folha, e vídeos custam 2 por exportação. No Pro e no Business,
+encartes custam 2 por página, cartazes e etiquetas custam 1 por página ou folha,
+e vídeos custam 5 por exportação. A remoção de fundo custa 1 crédito por recorte
+concluído em todos os planos.
 Pro e Business incluem JPG, PDF e o template
 Oferta Profissional. A gravação em MP4 depende do navegador. Nos lotes de
-banners, os limites são de 50 artes no Pro e 100 no Business.
+banners no editor, os limites são de 5 artes no Grátis, 50 no Pro e 100 no
+Business. A API mantém o limite geral de 1.000 unidades por operação no Business.
 
 O editor consulta o saldo antes de processar. A confirmação envia o arquivo
 concluído para conferência de formato e registro do consumo, sem armazenar
@@ -102,8 +105,9 @@ python manage.py runserver
 
 Open `http://localhost:5173`. The API is available at `http://localhost:8000/api/`.
 
-The frontend reads the API base URL from `frontend/.env` (`VITE_API_URL`); its local
-default is `http://localhost:8000/api`. The backend's default database is
+The frontend reads `VITE_API_URL` from the process or `frontend/.env`. Its API
+default is `http://localhost:8000/api` in development and `/api` in production.
+The backend's default database for local development is
 `backend/db.sqlite3`, unless `DATABASE_URL` in `backend/.env` selects another
 database. The backend allows the local Vite origins on ports 5173.
 Campaign images are stored outside the database under `backend/media` by default.
@@ -141,6 +145,44 @@ Cloudflare overwrites `X-Forwarded-Proto` at its edge. Django accepts it only on
 requests from loopback with the configured public Host. This profile enables
 HTTPS redirects, secure cookies and HSTS for 300 seconds by default.
 Use the Django development server only for this test setup.
+
+### Homologação no Render e na Vercel
+
+Use um ambiente separado para validar o procedimento antes da publicação.
+No Render, configure `backend` como diretório raiz e `pip install -r requirements.txt`
+como comando de build. Vincule a URL interna do PostgreSQL em `DATABASE_URL` e
+mantenha `DJANGO_DEBUG=False`. O perfil Render é ativado pela variável `RENDER`
+da plataforma e inclui `RENDER_EXTERNAL_HOSTNAME` nos hosts permitidos.
+
+- Faça backup do banco e da mídia em local privado e valide a restauração em
+  homologação. Se a instância existente usa SQLite, `migrate` cria ou atualiza o
+  esquema PostgreSQL. A cópia dos registros para o novo banco exige um procedimento
+  separado com conferência de usuários, projetos, relacionamentos, saldo e histórico.
+- Configure `DJANGO_MEDIA_ROOT` com o próprio ponto de montagem do disco persistente,
+  por exemplo `/var/data/media`. Preserve os caminhos relativos dos arquivos ao
+  copiar a mídia existente. O disco deve ficar fora da árvore de arquivos estáticos.
+  O Render oferece discos persistentes para serviços compatíveis em planos pagos.
+- Revise `python manage.py migrate --plan` antes de executar a migração. Configure
+  `python manage.py migrate --noinput` no pre-deploy e `sh start-render.sh` no start.
+  O start verifica o disco gravável e as migrações antes de iniciar o Gunicorn.
+  Configure `/api/health/` como health check. Ele retorna `200` com `status: ok`
+  quando o banco responde e `503` com `status: unavailable` quando há falha de banco.
+- Configure `frontend` como diretório raiz na Vercel. Use `VITE_API_URL=/api` se
+  houver uma configuração anterior apontando diretamente para o Render. Cadastre
+  a origem HTTPS exata da Vercel em `DJANGO_CORS_ALLOWED_ORIGINS`. Para homologação,
+  ajuste o destino do rewrite para o Render de teste e autorize sua origem explícita.
+- Confirme no navegador que login, recarregamento e logout usam a mesma origem,
+  que o cookie tem `HttpOnly`, `Secure` e `SameSite=Lax`, e que o Render recebe o
+  cabeçalho `Origin` nas requisições de sessão. O backend Render exige origem
+  confiável para autenticação e redefinição de senha. As APIs privadas usam Bearer.
+- Valide uploads e exportações nos tamanhos reais pelo rewrite, inclusive vídeos
+  grandes. Salve um projeto com fotos e logo, reinicie o backend e confira se a
+  conta proprietária consegue reabri-lo e se outra conta recebe `404` ao tentar
+  consultar seus arquivos. Confirme também a entrega de e-mails de recuperação.
+
+Consulte a documentação do [PostgreSQL no Render](https://render.com/docs/deploy-django),
+dos [discos persistentes](https://render.com/docs/disks) e dos
+[rewrites na Vercel](https://vercel.com/docs/routing/rewrites).
 
 ### Authentication
 

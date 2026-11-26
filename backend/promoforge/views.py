@@ -74,7 +74,11 @@ def validate_image_upload(upload, verify_signature=False):
 
 
 def protected_file_response(upload, content_type):
-    response = FileResponse(upload.open('rb'), content_type=content_type)
+    try:
+        content = upload.open('rb')
+    except FileNotFoundError:
+        raise Http404 from None
+    response = FileResponse(content, content_type=content_type)
     response['X-Content-Type-Options'] = 'nosniff'
     response['Cache-Control'] = 'private, no-store'
     return response

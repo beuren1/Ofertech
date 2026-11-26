@@ -203,7 +203,7 @@ function ProductRow({
   return (
     <li className="flex flex-col gap-3 border-b border-slate-100 py-3 last:border-0 dark:border-slate-800 sm:flex-row sm:items-center">
       {product.imageUrl
-        ? <img src={product.imageUrl} alt={`Foto de ${product.name}`} onError={() => onImageError(index)} className="h-20 w-20 rounded-lg bg-slate-100 object-contain" />
+        ? <img src={product.imageUrl} alt={`Foto de ${product.name}`} loading="lazy" decoding="async" onError={() => onImageError(index)} className="h-20 w-20 rounded-lg bg-slate-100 object-contain" />
         : <div className="grid h-20 w-20 place-items-center rounded-lg bg-slate-100 text-slate-400 dark:bg-slate-800"><ImagePlus size={24} /></div>}
       <div className="min-w-0 flex-1">
         <p className="truncate font-semibold">{product.name}</p>

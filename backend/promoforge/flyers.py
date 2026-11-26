@@ -71,6 +71,10 @@ class FlyerProductSerializer(serializers.Serializer):
     discountTextColor = serializers.RegexField(r'^#[0-9a-fA-F]{6}$', required=False)
     oldPriceColor = serializers.RegexField(r'^#[0-9a-fA-F]{6}$', required=False)
     textPositions = FlyerTextPositionsSerializer(required=False)
+    lockedLayers = serializers.ListField(
+        child=serializers.ChoiceField(choices=['photo', 'name', 'originalPrice', 'offer']),
+        max_length=4, required=False,
+    )
     glow = ProductGlowSerializer(required=False)
 
 
@@ -147,6 +151,10 @@ class FlyerDesignSerializer(serializers.Serializer):
     logo = FlyerImageField(max_length=66000)
     backgroundImage = FlyerImageField(max_length=132000)
     layerPositions = FlyerDesignPositionsSerializer(required=False)
+    lockedLayers = serializers.ListField(
+        child=serializers.ChoiceField(choices=['logo', 'storeName', 'subtitle', 'category', 'backgroundImage']),
+        max_length=5, required=False,
+    )
     headerTextColor = serializers.RegexField(r'^#[0-9a-fA-F]{6}$', required=False)
     storeNameColor = serializers.RegexField(r'^#[0-9a-fA-F]{6}$', required=False)
     subtitleColor = serializers.RegexField(r'^#[0-9a-fA-F]{6}$', required=False)
@@ -173,9 +181,18 @@ class FlyerDesignSerializer(serializers.Serializer):
 
 
 class FlyerSummarySerializer(serializers.ModelSerializer):
+    kind = serializers.SerializerMethodField()
+
+    def get_kind(self, project):
+        if 'video' in project.design:
+            return 'video'
+        if 'print' in project.design:
+            return 'print'
+        return 'flyer'
+
     class Meta:
         model = FlyerProject
-        fields = ['id', 'name', 'created_at', 'updated_at']
+        fields = ['id', 'name', 'created_at', 'updated_at', 'kind']
 
 
 class FlyerProjectSerializer(FlyerSummarySerializer):
@@ -221,7 +238,8 @@ class FlyerProjectViewSet(viewsets.ModelViewSet):
             kind = self.request.query_params.get('kind')
             if kind in {'print', 'video'}:
                 return queryset.filter(design__has_key=kind)
-            queryset = queryset.exclude(design__has_any_keys=['print', 'video'])
+            if kind != 'all':
+                queryset = queryset.exclude(design__has_any_keys=['print', 'video'])
         return queryset
 
     def get_serializer_class(self):

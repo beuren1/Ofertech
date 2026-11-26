@@ -1,13 +1,10 @@
-import { Navigate, Outlet, Route, Routes } from 'react-router-dom'
+import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 import { lazy, Suspense, type ReactNode } from 'react'
 import { DashboardLayout } from './components/Layout'
 import { AuthProvider, useAuth } from './auth'
 import { LandingPage } from './pages/Landing'
 import { AuthPage } from './pages/Auth'
 import { DashboardPage } from './pages/Dashboard'
-import { GeneratorPage } from './pages/Generator'
-import { BulkPage } from './pages/Bulk'
-import { FlyerPageEditor } from './pages/Flyer'
 import { TemplatesPage } from './pages/Templates'
 import { HistoryPage } from './pages/History'
 import { PlansPage } from './pages/Plans'
@@ -15,12 +12,19 @@ import { SettingsPage } from './pages/Settings'
 import { StorePage } from './pages/Store'
 import { BrandFooter } from './components/Brand'
 import { PageMetadata } from './components/PageMetadata'
-import { CommercialDashboard } from './pages/CommercialDashboard'
+const GeneratorPage = lazy(() => import('./pages/Generator').then(module => ({ default: module.GeneratorPage })))
+const BulkPage = lazy(() => import('./pages/Bulk').then(module => ({ default: module.BulkPage })))
+const FlyerPageEditor = lazy(() => import('./pages/Flyer').then(module => ({ default: module.FlyerPageEditor })))
+const CommercialDashboard = lazy(() => import('./pages/CommercialDashboard').then(module => ({ default: module.CommercialDashboard })))
 const ForgotPasswordPage = lazy(() => import('./pages/PasswordReset').then(module => ({ default: module.ForgotPasswordPage })))
 const ResetPasswordPage = lazy(() => import('./pages/PasswordReset').then(module => ({ default: module.ResetPasswordPage })))
 
 function withLayout(page: ReactNode) {
-  return <DashboardLayout>{page}</DashboardLayout>
+  return <DashboardLayout><Suspense fallback={<LoadingPage />}>{page}</Suspense></DashboardLayout>
+}
+
+function LoadingPage() {
+  return <p role="status" className="p-8">Carregando…</p>
 }
 
 function RequireAuth() {
@@ -41,6 +45,7 @@ function PlansRoute() {
 }
 
 export default function App() {
+  const { search } = useLocation()
   return (
     <AuthProvider>
       <PageMetadata />
@@ -52,13 +57,13 @@ export default function App() {
         <Route path="/register" element={<AuthPage mode="register" />} />
         <Route path="/plans" element={<PlansRoute />} />
         <Route element={<RequireAuth />}>
-          <Route path="/admin-dashboard" element={<CommercialDashboard />} />
+          <Route path="/admin-dashboard" element={<Suspense fallback={<LoadingPage />}><CommercialDashboard /></Suspense>} />
           <Route path="/dashboard" element={withLayout(<DashboardPage />)} />
           <Route path="/generator" element={withLayout(<GeneratorPage />)} />
           <Route path="/bulk" element={withLayout(<BulkPage />)} />
-          <Route path="/flyers" element={withLayout(<FlyerPageEditor />)} />
-          <Route path="/print" element={withLayout(<FlyerPageEditor key="print" printMode />)} />
-          <Route path="/videos" element={withLayout(<FlyerPageEditor key="video" videoMode />)} />
+          <Route path="/flyers" element={withLayout(<FlyerPageEditor key={`flyers${search}`} initialSearch={search} />)} />
+          <Route path="/print" element={withLayout(<FlyerPageEditor key={`print${search}`} initialSearch={search} printMode />)} />
+          <Route path="/videos" element={withLayout(<FlyerPageEditor key={`video${search}`} initialSearch={search} videoMode />)} />
           <Route path="/templates" element={withLayout(<TemplatesPage />)} />
           <Route path="/history" element={withLayout(<HistoryPage />)} />
           <Route path="/settings" element={withLayout(<SettingsPage />)} />

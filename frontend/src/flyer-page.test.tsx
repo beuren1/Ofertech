@@ -59,6 +59,11 @@ it('offers posters and labels to free accounts at two credits per page', async (
   expect(screen.getByText(/2 créditos por página/)).toBeTruthy()
   expect(screen.getByRole<HTMLOptionElement>('option', { name: 'Etiquetas de preço' }).disabled).toBe(false)
   expect(screen.queryByRole('button', { name: 'Exportar PDF' })).toBeNull()
+  const zoom = screen.getByRole('slider', { name: 'Zoom da página 1' })
+  fireEvent.change(zoom, { target: { value: '150' } })
+  const preview = screen.getByRole('group', { name: 'Prévia ampliada da página 1' })
+  expect(zoom.getAttribute('aria-valuetext')).toBe('150%')
+  expect(preview.querySelector('canvas')?.style.width).toBe('150%')
   fireEvent.change(screen.getByLabelText('Logotipo'), { target: { files: [new File(['logo'], 'logo.png', { type: 'image/png' })] } })
   expect(await screen.findByRole('button', { name: 'Remover fundo do logotipo' })).toBeTruthy()
   await act(async () => {})
@@ -155,10 +160,15 @@ it('imports CSV and campaign products, edits a price, saves and reopens the proj
     new MouseEvent(type, { clientX: x, clientY: y, button: 0, bubbles: true }), { pointerId: 1 },
   ))
   pointer('pointerdown', 100, 100)
+  pointer('pointermove', 110, 90)
   pointer('pointermove', 125, 75)
   pointer('pointerup', 125, 75)
   expect(screen.getByLabelText<HTMLInputElement>('Posição horizontal').value).toBe('50')
   expect(screen.getByLabelText<HTMLInputElement>('Posição vertical').value).toBe('-50')
+  fireEvent.click(screen.getByRole('button', { name: 'Desfazer' }))
+  expect(screen.getByLabelText<HTMLInputElement>('Posição horizontal').value).toBe('0')
+  fireEvent.click(screen.getByRole('button', { name: 'Refazer' }))
+  expect(screen.getByLabelText<HTMLInputElement>('Posição horizontal').value).toBe('50')
   for (const y of [300, 500, 700]) {
     await act(async () => {})
     pointer('pointerdown', 100, y)
@@ -171,6 +181,15 @@ it('imports CSV and campaign products, edits a price, saves and reopens the proj
     pointer('pointermove', 260, y - 10)
     pointer('pointerup', 260, y - 10)
   }
+  await act(async () => {})
+  fireEvent.click(screen.getByText('Camadas da página 2'))
+  fireEvent.click(screen.getByRole('button', { name: 'Bloquear Foto · Camiseta' }))
+  expect(screen.getByLabelText<HTMLInputElement>('Posição horizontal').disabled).toBe(true)
+  await screen.findByRole('button', { name: 'Desbloquear Foto · Camiseta' })
+  pointer('pointerdown', 100, 100)
+  pointer('pointermove', 110, 100)
+  pointer('pointerup', 110, 100)
+  expect(screen.getByLabelText<HTMLInputElement>('Posição horizontal').value).toBe('50')
   const transfer = { setData: vi.fn(), effectAllowed: 'none', dropEffect: 'none' }
   fireEvent.dragStart(screen.getByLabelText('Arrastar Camiseta'), { dataTransfer: transfer })
   fireEvent.dragOver(screen.getByLabelText('Arrastar Café'), { dataTransfer: transfer })
@@ -186,7 +205,7 @@ it('imports CSV and campaign products, edits a price, saves and reopens the proj
       layerPositions: Object.fromEntries(designLayers.map(layer => [layer, { x: 40, y: -40 }])),
     }),
     products: [expect.objectContaining({
-      price: '30,00', featured: true, imageUrl: 'data:image/webp;base64,AAAA', photoScale: 160, photoX: 50, photoY: -50, offerLabel: 'IMPERDÍVEL',
+      price: '30,00', featured: true, imageUrl: 'data:image/webp;base64,AAAA', photoScale: 160, photoX: 50, photoY: -50, offerLabel: 'IMPERDÍVEL', lockedLayers: ['photo'],
       offerColor: '#6837ad', discountColor: '#ffd635', offerTextColor: '#222222', oldPriceColor: '#557799',
       textPositions: { name: { x: 50, y: -50 }, originalPrice: { x: 50, y: -50 }, offer: { x: 50, y: -50 } },
       glow: { enabled: true, color: '#44aaff', intensity: 200, blur: 7 },
@@ -195,6 +214,27 @@ it('imports CSV and campaign products, edits a price, saves and reopens the proj
   fireEvent.change(screen.getByLabelText('Projetos salvos'), { target: { value: '8' } })
   fireEvent.click(screen.getByRole('button', { name: 'Abrir' }))
   await waitFor(() => expect(screen.getByLabelText<HTMLInputElement>('Nome do projeto').value).toBe('Encarte salvo'))
+}, 15_000)
+
+it('opens a recent project link in its editor', async () => {
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null)
+  vi.mocked(apiRequest).mockImplementation(async path => path === 'flyers/21/'
+    ? { ...createFlyer(true), id: 21, name: 'Cartaz da loja' }
+    : { results: [], next: null })
+  render(<FlyerPageEditor printMode initialSearch="?project_id=21" />)
+  await waitFor(() => expect(screen.getByLabelText<HTMLInputElement>('Nome do projeto').value).toBe('Cartaz da loja'))
+  expect(apiRequest).toHaveBeenCalledWith('flyers/21/', { accessToken: 'fixture-session' })
+})
+
+it('applies the gallery template and its background to a new project', async () => {
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null)
+  vi.mocked(apiRequest).mockResolvedValue({ results: [], next: null })
+  const fetchBackground = vi.spyOn(window, 'fetch').mockResolvedValue(new Response('preview', { headers: { 'Content-Type': 'image/jpeg' } }))
+  render(<FlyerPageEditor initialSearch="?template=06_farmacia_azul" />)
+  await waitFor(() => expect(screen.getByLabelText<HTMLInputElement>('Nome do projeto').value).toBe('Farmácia azul'))
+  expect(screen.getByLabelText<HTMLSelectElement>('Modelo visual').value).toBe('pharmacy')
+  expect(fetchBackground).toHaveBeenCalledWith('/flyer-backgrounds/06_farmacia_azul.jpg')
+  expect(screen.getByRole('button', { name: 'Remover imagem de fundo' })).toBeTruthy()
 })
 
 it('imports a print catalog, edits paper and label settings, and persists the individual selection', async () => {
