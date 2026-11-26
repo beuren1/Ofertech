@@ -1,0 +1,722 @@
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from 'react'
+import { FileImage, FileText, GripVertical, Plus, Save, Upload } from 'lucide-react'
+import { apiBlobRequest, apiRequest, getErrorMessage, useAuth } from '../auth'
+import { parseProductCsv } from '../bulk'
+import { campaignAssetContentPath, type SavedCampaign } from '../campaigns'
+import { exportFlyer } from '../flyerExport'
+import { PrintControls } from '../components/PrintControls'
+import { FlyerBackgroundCarousel } from '../components/FlyerBackgroundCarousel'
+import { ProductCutout } from '../components/ProductCutout'
+import { creditCost, creditOperation, type CreditOperation } from '../billing'
+import { dragFlyerPhoto, MAX_FLYER_PHOTO_SCALE, MAX_GLOW_INTENSITY, OFFER_LABELS, PHOTO_DEFAULTS, PRODUCT_GLOW_DEFAULTS, type FlyerLayer, type FlyerPhotoBounds, type PhotoAdjustment } from '../flyerOfferLayout'
+import type { FlyerDesignLayer } from '../flyerOfferLayout'
+import { VideoControls, VideoPreview } from '../components/VideoPreview'
+import { DEFAULT_PRINT, paginatePrint, printPaper, printSettingsError, type PrintSettings } from '../printLayout'
+import {
+  contrast, createFlyer, FLYER_LAYOUTS, FLYER_LIMIT, FLYER_TEMPLATES, flyerCanvasSize,
+  flyerGrid, flyerProduct, paginateFlyer, prepareFlyerImage, priceNumber, printProductErrors, renderFlyerPage, reopenFlyer,
+  type FlyerDesign, type FlyerPage, type FlyerProduct, type FlyerSummary, type SavedFlyer,
+} from '../flyers'
+
+type PageResult<T> = { results: T[]; next: string | null }
+const panel = 'space-y-4 rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900'
+const field = 'mt-1 block w-full rounded-lg border border-slate-300 bg-transparent px-3 py-2 dark:border-slate-700 dark:bg-slate-900'
+const secondary = 'inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold disabled:opacity-50 dark:border-slate-700'
+const primary = 'inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50'
+const imageTypes = 'image/png,image/jpeg,image/webp'
+const previewScale = 0.5
+const productFields = [
+  ['name', 'Nome do produto', 180],
+  ['category', 'Categoria', 80],
+  ['originalPrice', 'Preço anterior', 36],
+  ['price', 'Preço promocional', 36],
+  ['discount', 'Desconto', 36],
+  ['imageUrl', 'URL da foto', 2048],
+] as const
+
+function Field({ label, children, className = 'block' }: { label: string; children: ReactNode; className?: string }) {
+  return <label className={`${className} text-sm font-medium`}><span>{label}</span>{children}</label>
+}
+
+type PreviewLayer = { bounds: FlyerPhotoBounds } & (
+  { product: FlyerProduct; layer: FlyerLayer } | { designLayer: FlyerDesignLayer }
+)
+
+function FlyerPreview({ page, design, index, total, onExport, onMoveLayer, onMoveDesignLayer, busy }: {
+  page: FlyerPage; design: FlyerDesign; index: number; total: number; onExport?: () => void; busy: boolean
+  onMoveLayer?: (product: FlyerProduct, layer: FlyerLayer) => ((adjustment: PhotoAdjustment) => void) | undefined
+  onMoveDesignLayer?: (layer: FlyerDesignLayer, adjustment: PhotoAdjustment) => void
+}) {
+  const canvas = useRef<HTMLCanvasElement>(null)
+  const layers = useRef<PreviewLayer[]>([])
+  const drag = useRef<{
+    pointer: number; x: number; y: number; bounds: FlyerPhotoBounds
+    move: (adjustment: PhotoAdjustment) => void; last: PhotoAdjustment
+  } | null>(null)
+  const [status, setStatus] = useState('')
+  const size = flyerCanvasSize(design, previewScale)
+  const aspect = size.width / size.height
+  const reportDesignLayers = Boolean(onMoveDesignLayer)
+  const previewStyle = { '--preview-max-width': `max(12rem, calc(${100 * aspect}dvh - ${15 * aspect}rem))` } as CSSProperties
+  useEffect(() => {
+    let active = true
+    const buffer = document.createElement('canvas')
+    const zones: typeof layers.current = []
+    void renderFlyerPage(buffer, page, design, index, total, previewScale,
+      (product, bounds, layer = 'photo') => zones.push({ product, bounds, layer }),
+      reportDesignLayers ? (designLayer, bounds) => zones.push({ designLayer, bounds }) : undefined).then(missing => {
+      if (!active || !canvas.current) return
+      const context = canvas.current.getContext('2d')
+      context?.clearRect(0, 0, canvas.current.width, canvas.current.height)
+      context?.drawImage(buffer, 0, 0)
+      layers.current = zones
+      setStatus(missing ? 'Algumas imagens não puderam ser carregadas. Envie os arquivos ou use URLs que permitam CORS.' : '')
+    }).catch(() => {
+      if (active) {
+        layers.current = []
+        setStatus('Não foi possível renderizar a página.')
+      }
+    })
+    return () => { active = false }
+  }, [page, design, index, total, reportDesignLayers])
+
+  function canvasPoint(event: PointerEvent<HTMLCanvasElement>) {
+    const target = event.currentTarget
+    const rect = target.getBoundingClientRect()
+    return {
+      x: (event.clientX - rect.left) * target.width / rect.width,
+      y: (event.clientY - rect.top) * target.height / rect.height,
+    }
+  }
+
+  function layerAt(x: number, y: number) {
+    return [...layers.current].reverse().find(({ bounds: { image } }) =>
+      x >= image.x && x <= image.x + image.width && y >= image.y && y <= image.y + image.height)
+  }
+
+  function startDrag(event: PointerEvent<HTMLCanvasElement>) {
+    if (!onMoveLayer || busy || drag.current || event.button !== 0) return
+    const { x, y } = canvasPoint(event)
+    const hit = layerAt(x, y)
+    if (!hit) return
+    const move = 'designLayer' in hit
+      ? (adjustment: PhotoAdjustment) => onMoveDesignLayer?.(hit.designLayer, adjustment)
+      : onMoveLayer(hit.product, hit.layer)
+    if (!move) return
+    drag.current = {
+      pointer: event.pointerId, x, y, bounds: hit.bounds, move,
+      last: dragFlyerPhoto(hit.bounds, 0, 0),
+    }
+    event.currentTarget.setPointerCapture(event.pointerId)
+    event.currentTarget.style.cursor = 'grabbing'
+  }
+
+  function moveDrag(event: PointerEvent<HTMLCanvasElement>) {
+    if (!onMoveLayer || busy) return
+    const { x, y } = canvasPoint(event)
+    const active = drag.current
+    if (!active) {
+      event.currentTarget.style.cursor = layerAt(x, y) ? 'grab' : ''
+      return
+    }
+    if (active.pointer !== event.pointerId) return
+    const next = dragFlyerPhoto(active.bounds, x - active.x, y - active.y)
+    if (next.photoX === active.last.photoX && next.photoY === active.last.photoY) return
+    active.last = next
+    active.move(next)
+  }
+
+  function endDrag(event: PointerEvent<HTMLCanvasElement>) {
+    if (drag.current?.pointer !== event.pointerId) return
+    if (event.type === 'pointerup') moveDrag(event)
+    drag.current = null
+    event.currentTarget.style.cursor = ''
+  }
+
+  return (
+    <figure className="space-y-2">
+      <canvas ref={canvas} width={size.width} height={size.height}
+        aria-label={`Prévia da página ${index + 1}${page.category ? ` · ${page.category}` : ''}`}
+        style={onMoveLayer ? previewStyle : undefined}
+        className={`mx-auto block h-auto w-full bg-white shadow-md ${design.print?.kind === 'poster' ? '' : 'rounded-lg'} ${onMoveLayer ? 'touch-none xl:max-w-[var(--preview-max-width)]' : ''}`}
+        onPointerDown={startDrag} onPointerMove={moveDrag}
+        onPointerUp={endDrag} onPointerCancel={endDrag} onLostPointerCapture={endDrag} />
+      <figcaption className="flex items-center justify-between gap-2 text-sm">
+        <span>{total ? `Página ${index + 1}${page.category ? ` · ${page.category}` : ''}` : 'Prévia do modelo'}</span>
+        {onExport && <button type="button" className={secondary} disabled={busy} onClick={onExport}>Baixar PNG</button>}
+      </figcaption>
+      {status && <p className="text-sm text-amber-700 dark:text-amber-300">{status}</p>}
+    </figure>
+  )
+}
+
+const emptyPage: FlyerPage = { category: '', products: [] }
+
+export function FlyerPageEditor({ printMode = false, videoMode = false }: { printMode?: boolean; videoMode?: boolean }) {
+  const { accessToken, user } = useAuth()
+  const free = user?.profile.plan === 'free'
+  const lastExport = useRef<{ design: FlyerDesign; pages: FlyerPage[]; request: string; operation: CreditOperation; artifact: Awaited<ReturnType<typeof exportFlyer>>; confirmed: boolean }>()
+  const [flyer, setFlyer] = useState(() => createFlyer(printMode, videoMode))
+  const [currentId, setCurrentId] = useState<number | null>(null)
+  const [campaigns, setCampaigns] = useState<SavedCampaign[]>([])
+  const [projects, setProjects] = useState<FlyerSummary[]>([])
+  const [campaignPage, setCampaignPage] = useState(1)
+  const [projectPage, setProjectPage] = useState(1)
+  const [moreCampaigns, setMoreCampaigns] = useState(false)
+  const [moreProjects, setMoreProjects] = useState(false)
+  const [selectedCampaign, setSelectedCampaign] = useState('')
+  const [selectedProject, setSelectedProject] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+  const [openProduct, setOpenProduct] = useState<number | null>(null)
+  const [dropTarget, setDropTarget] = useState<number | null>(null)
+  const draggedProduct = useRef<number | null>(null)
+  const inProgress = useRef(false)
+  const { products, design } = flyer
+  const { layout, grouped, print, video } = design
+  const documentMode = !printMode && !videoMode
+  const editablePreview = documentMode || print?.kind === 'poster'
+  const kindQuery = videoMode ? '&kind=video' : printMode ? '&kind=print' : ''
+  const validDuration = (duration: number) => Number.isInteger(duration) && duration >= 1 && duration <= 60
+  const invalidVideo = Boolean(video && (!validDuration(video.duration) || products.some(product => product.duration !== undefined && !validDuration(product.duration))))
+  const settingsError = print ? printSettingsError(print) : ''
+  const calculatedPages = useMemo(() => {
+    if (videoMode) return []
+    if (!print) return paginateFlyer(products, { layout, grouped })
+    return settingsError ? [] : paginatePrint(products, print).map(items => ({ category: '', products: items }))
+  }, [products, layout, grouped, print, settingsError, videoMode])
+  const printError = settingsError || (print && calculatedPages.length > 100 ? 'Reduza a quantidade para exportar até 100 folhas por vez.' : '')
+  const pages = printError ? [] : calculatedPages
+  const pageCost = creditCost(print?.kind ?? 'flyer', user?.profile.plan)
+  const freeBatchExceeded = free && pages.length > 5
+  const paper = printPaper(print)
+
+  useEffect(() => {
+    if (!accessToken) return
+    let active = true
+    void apiRequest<PageResult<SavedCampaign>>(`campaigns/?page=${campaignPage}`, { accessToken }).then(result => {
+      if (active) {
+        setCampaigns(current => campaignPage === 1 ? result.results : [...current, ...result.results])
+        setMoreCampaigns(Boolean(result.next))
+      }
+    }).catch(reason => { if (active) setError(getErrorMessage(reason)) })
+    return () => { active = false }
+  }, [accessToken, campaignPage])
+
+  useEffect(() => {
+    if (!accessToken) return
+    let active = true
+    void apiRequest<PageResult<FlyerSummary>>(`flyers/?page=${projectPage}${kindQuery}`, { accessToken }).then(result => {
+      if (active) {
+        setProjects(current => projectPage === 1 ? result.results : [...current, ...result.results])
+        setMoreProjects(Boolean(result.next))
+      }
+    }).catch(reason => { if (active) setError(getErrorMessage(reason)) })
+    return () => { active = false }
+  }, [accessToken, projectPage, kindQuery])
+
+  async function run(action: () => Promise<void>) {
+    if (inProgress.current) return
+    inProgress.current = true
+    setBusy(true)
+    setError('')
+    setMessage('')
+    try {
+      await action()
+    } catch (reason) {
+      setError(getErrorMessage(reason))
+    } finally {
+      inProgress.current = false
+      setBusy(false)
+    }
+  }
+
+  function editDesign(values: Partial<FlyerDesign>) {
+    setFlyer(current => ({ ...current, design: { ...current.design, ...values } }))
+  }
+
+  function editPrint(changes: Partial<PrintSettings>) {
+    if (!print) return
+    const next = { ...print, ...changes }
+    if (changes.kind === 'poster' && printSettingsError({ ...print, kind: 'labels' })) {
+      next.labelWidth = DEFAULT_PRINT.labelWidth
+      next.labelHeight = DEFAULT_PRINT.labelHeight
+      next.copies = DEFAULT_PRINT.copies
+    }
+    editDesign({ print: next })
+  }
+
+  function editProduct(index: number, values: Partial<FlyerProduct>) {
+    setFlyer(current => ({
+      ...current, products: current.products.map((product, position) => position === index ? { ...product, ...values } : product),
+    }))
+  }
+
+  function appendProducts(items: FlyerProduct[]) {
+    if (!items.length) throw new Error('Nenhum produto foi encontrado.')
+    if (products.length + items.length > FLYER_LIMIT) throw new Error(`O projeto aceita até ${FLYER_LIMIT} produtos.`)
+    setFlyer(current => ({ ...current, products: [...current.products, ...items] }))
+    setMessage(`${items.length} produto(s) adicionado(s).`)
+  }
+
+  async function importCampaign() {
+    if (!accessToken || !selectedCampaign) return
+    const stored = await apiRequest<SavedCampaign>(`campaigns/${Number(selectedCampaign)}/`, { accessToken })
+    if (products.length + stored.artworks.length > FLYER_LIMIT) throw new Error(`O projeto aceita até ${FLYER_LIMIT} produtos.`)
+    const items: FlyerProduct[] = []
+    let missingPhotos = 0
+    for (const artwork of stored.artworks) {
+      const product = artwork.product
+      let imageUrl = product.image_url || product.source_image_url || ''
+      if (product.image_asset_id) {
+        try {
+          const blob = await apiBlobRequest(campaignAssetContentPath(stored.id, product.image_asset_id), accessToken)
+          imageUrl = await prepareFlyerImage(blob, 420, 15000)
+        } catch {
+          missingPhotos += 1
+        }
+      }
+      items.push(flyerProduct({
+        name: artwork.config?.productName || product.name,
+        category: product.category,
+        price: artwork.config?.salePrice ?? product.price,
+        originalPrice: artwork.config?.originalPrice ?? product.original_price,
+        discount: artwork.config?.discount ?? product.discount,
+        imageUrl,
+      }))
+    }
+    appendProducts(items)
+    if (missingPhotos) setMessage(`${items.length} produto(s) adicionado(s). Não foi possível copiar ${missingPhotos} foto(s); você pode reenviá-las.`)
+  }
+
+  async function save() {
+    if (!accessToken) return
+    if (settingsError) throw new Error(settingsError)
+    if (invalidVideo) throw new Error('Informe durações inteiras entre 1 e 60 segundos.')
+    if (!flyer.name.trim() || !design.title.trim() || products.some(product => !product.name.trim())) {
+      throw new Error('Preencha o nome do projeto, o título e o nome de cada produto.')
+    }
+    if (print || video) validateProductFields(products)
+    const saved = await apiRequest<SavedFlyer>(currentId ? `flyers/${currentId}/` : 'flyers/', {
+      accessToken, method: currentId ? 'PUT' : 'POST', body: { ...flyer, design },
+    })
+    setCurrentId(saved.id)
+    setSelectedProject(String(saved.id))
+    const summary = { id: saved.id, name: saved.name, updated_at: saved.updated_at }
+    setProjects(current => [summary, ...current.filter(project => project.id !== saved.id)])
+    setMessage(documentMode ? 'Encarte salvo.' : 'Projeto salvo.')
+  }
+
+  async function openProject() {
+    if (!accessToken || !selectedProject) return
+    const saved = await apiRequest<SavedFlyer>(`flyers/${Number(selectedProject)}/`, { accessToken })
+    if (Boolean(saved.design.print) !== printMode || Boolean(saved.design.video) !== videoMode) throw new Error('Selecione um projeto deste editor.')
+    setFlyer(reopenFlyer(saved))
+    setCurrentId(saved.id)
+    setOpenProduct(null)
+    setMessage('Projeto carregado.')
+  }
+
+  async function download(format: 'png' | 'pdf' | 'zip', page?: number) {
+    if (!accessToken || !pages.length) return
+    const exportedProducts = print ? (page === undefined ? pages.flatMap(sheet => sheet.products) : pages[page].products) : []
+    if (print) validateProductFields(exportedProducts, true)
+    const request = `${format}:${page ?? 'all'}`
+    let entry = lastExport.current
+    if (!entry || entry.design !== design || entry.pages !== pages || entry.request !== request) {
+      const count = page === undefined ? pages.length : 1
+      const operation: CreditOperation = {
+        key: crypto.randomUUID(), kind: print?.kind ?? 'flyer', count,
+        format: format === 'png' && count > 1 ? 'zip' : format,
+        premium: design.template === 'professional',
+      }
+      await creditOperation(accessToken, operation)
+      entry = {
+        design, pages, request, operation,
+        artifact: await exportFlyer(pages, design, format, page), confirmed: false,
+      }
+      lastExport.current = entry
+    }
+    if (!entry.confirmed) {
+      await creditOperation(accessToken, entry.operation, entry.artifact.blob)
+      entry.confirmed = true
+    }
+    const { blob, extension } = entry.artifact
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${flyer.name.trim().replace(/[^\p{L}\p{N}-]+/gu, '-').replace(/^-|-$/g, '') || 'encarte'}.${extension}`
+    link.click()
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
+
+  function validateProductFields(items: FlyerProduct[], forExport = false) {
+    for (const product of items) {
+      const [message] = Object.values(printProductErrors(product, forExport))
+      if (message) throw new Error(`${product.name.trim() || 'Produto sem nome'} · ${message}`)
+    }
+  }
+
+  function moveProduct(index: number, destination: number) {
+    if (index === destination || destination < 0 || destination >= products.length) return
+    const reordered = [...products]
+    const [product] = reordered.splice(index, 1)
+    reordered.splice(destination, 0, product)
+    setFlyer(current => ({ ...current, products: reordered }))
+    setOpenProduct(destination)
+  }
+
+  return (
+    <div className="mx-auto max-w-[1500px] space-y-6">
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-black tracking-tight">{videoMode ? 'Criar Vídeo' : printMode ? 'Criar Cartaz' : 'Criar Encarte'}</h1>
+          <p className="mt-1 text-slate-600 dark:text-slate-400">{videoMode ? 'Monte ofertas animadas para a TV da loja.' : printMode ? 'Prepare cartazes e etiquetas de preço para imprimir em tamanho real.' : 'Monte ofertas em páginas A4 para divulgar ou imprimir.'}</p>
+          {!videoMode && <p className="mt-1 text-sm">Exportação · {pageCost} {pageCost === 1 ? 'crédito' : 'créditos'} por página. <a href="/plans" className="underline">Ver planos</a></p>}
+          {!videoMode && pages.length > 1 && <p className="text-sm">{freeBatchExceeded
+            ? 'No Grátis, exporte até 5 páginas por lote ou baixe uma página pela prévia.'
+            : `Exportar todas as ${pages.length} páginas custa ${pages.length * pageCost} créditos.`}</p>}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {!videoMode && <>
+            <button type="button" className={secondary} disabled={busy || !pages.length || freeBatchExceeded} onClick={() => void run(() => download(printMode && !free ? 'zip' : 'png'))}><FileImage size={17} /> {printMode && !free || free && pages.length > 1 ? 'Exportar ZIP de PNGs' : 'Exportar PNG'}</button>
+            {!free && <button type="button" className={secondary} disabled={busy || !pages.length} onClick={() => void run(() => download('pdf'))}><FileText size={17} /> Exportar PDF</button>}
+          </>}
+          <button type="button" className={primary} disabled={busy} onClick={() => void run(save)}><Save size={17} /> {documentMode ? 'Salvar encarte' : 'Salvar projeto'}</button>
+        </div>
+      </header>
+      {error && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-800 dark:bg-red-950 dark:text-red-200">{error}</p>}
+      {(busy || message) && <p role="status" className="text-sm text-indigo-700 dark:text-indigo-300">{busy ? 'Processando…' : message}</p>}
+      <div className="grid items-start gap-6 xl:grid-cols-[minmax(360px,460px)_minmax(0,1fr)]">
+        <fieldset disabled={busy} className="min-w-0 space-y-4">
+          <legend className="sr-only">{videoMode ? 'Editor de vídeo' : printMode ? 'Editor de impressão' : 'Editor de encarte'}</legend>
+          <section className={panel}>
+            <h2 className="font-bold">Projeto</h2>
+            <Field label="Nome do projeto"><input className={field} maxLength={180} value={flyer.name} onChange={event => setFlyer(current => ({ ...current, name: event.target.value }))} /></Field>
+            <div className="flex flex-wrap items-end gap-2">
+              <div className="min-w-40 flex-1">
+                <Field label="Projetos salvos"><select className={field} value={selectedProject} onChange={event => setSelectedProject(event.target.value)}>
+                  <option value="">Selecione um projeto</option>
+                  {projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}
+                </select></Field>
+              </div>
+              <button type="button" className={secondary} disabled={!selectedProject} onClick={() => void run(openProject)}>Abrir</button>
+              <button type="button" className={secondary} onClick={() => { setFlyer(createFlyer(printMode, videoMode)); setCurrentId(null); setSelectedProject(''); setOpenProduct(null); setMessage(''); setError('') }}>Novo</button>
+            </div>
+            {moreProjects && <button type="button" className={secondary} onClick={() => { setMoreProjects(false); setProjectPage(page => page + 1) }}>Mais projetos</button>}
+          </section>
+          {print && <PrintControls settings={print} products={products} error={printError} onChange={editPrint} />}
+          {video && <VideoControls settings={video} onChange={changes => editDesign({ video: { ...video, ...changes } })} />}
+          <section className={panel}>
+            <h2 className="font-bold">Visual e layout</h2>
+            <Field label="Modelo visual"><select className={field} value={design.template} onChange={event => {
+              const template = event.target.value as FlyerDesign['template']
+              const { primary, accent, background, font, border, badge } = FLYER_TEMPLATES[template]
+              editDesign({ template, primary, accent, background, font, border, badge })
+            }}>
+              {Object.entries(FLYER_TEMPLATES).filter(([key]) => key !== 'professional' || !free && (documentMode || print?.kind === 'poster' || design.template === 'professional'))
+                .map(([key, template]) => <option key={key} value={key}>{template.label}</option>)}
+            </select></Field>
+            <Field label="Nome da loja"><input className={field} maxLength={100} value={design.storeName} onChange={event => editDesign({ storeName: event.target.value })} /></Field>
+            <Field label={documentMode ? 'Título do encarte' : 'Título do material'}><input className={field} maxLength={100} value={design.title} onChange={event => editDesign({ title: event.target.value })} /></Field>
+            <Field label="Subtítulo"><input className={field} maxLength={160} value={design.subtitle} onChange={event => editDesign({ subtitle: event.target.value })} /></Field>
+            {documentMode && <div className="grid grid-cols-2 gap-3">
+              <Field label="Produtos por página"><select className={field} value={design.layout} onChange={event => editDesign({ layout: Number(event.target.value) as FlyerDesign['layout'] })}>
+                {FLYER_LAYOUTS.map(layout => <option key={layout}>{layout}</option>)}
+              </select></Field>
+              <Field label="Disposição"><select className={field} value={design.arrangement} onChange={event => editDesign({ arrangement: event.target.value as FlyerDesign['arrangement'] })}>
+                <option value="standard">{flyerGrid(design.layout, 'standard').cols} colunas</option>
+                <option value="wide">{flyerGrid(design.layout, 'wide').cols} colunas</option>
+              </select></Field>
+            </div>}
+            <Field label="Fonte"><select className={field} value={design.font} onChange={event => editDesign({ font: event.target.value as FlyerDesign['font'] })}>
+              <option value="sans">Arial</option><option value="serif">Georgia</option><option value="mono">Courier New</option>
+            </select></Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Borda dos cards"><select className={field} value={design.border} onChange={event => editDesign({ border: event.target.value as FlyerDesign['border'] })}>
+                <option value="none">Sem borda</option><option value="thin">Fina</option><option value="strong">Marcante</option>
+              </select></Field>
+              <Field label="Etiqueta de desconto"><select className={field} value={design.badge} onChange={event => editDesign({ badge: event.target.value as FlyerDesign['badge'] })}>
+                <option value="pill">Arredondada</option><option value="square">Retangular</option><option value="burst">Estrela</option><option value="none">Oculta</option>
+              </select></Field>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              {([['primary', 'Cabeçalho'], ['accent', 'Destaque'], ['background', 'Fundo']] as const).map(([key, label]) =>
+                <Field key={key} label={label} className="flex min-w-0 flex-col justify-between"><input type="color" className="mt-1 h-9 w-full cursor-pointer" value={design[key]} onChange={event => editDesign({ [key]: event.target.value })} /></Field>,
+              )}
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              {([
+                ['headerTextColor', 'Cor do título principal', contrast(design.primary)],
+                ['storeNameColor', 'Cor do nome da loja', design.headerTextColor ?? contrast(design.primary)],
+                ['subtitleColor', 'Cor do subtítulo', design.headerTextColor ?? contrast(design.primary)],
+                ['categoryTextColor', 'Texto da categoria', design.headerTextColor ?? contrast(design.primary)],
+                ['productTextColor', 'Nome do produto na arte', design.template === 'professional' ? '#082b12' : contrast(design.background)],
+              ] as const).map(([key, label, fallback]) =>
+                <Field key={key} label={label} className="flex min-w-0 flex-col justify-between"><input type="color" className="mt-1 h-9 w-full cursor-pointer"
+                  value={design[key] ?? fallback} onChange={event => editDesign({ [key]: event.target.value })} /></Field>,
+              )}
+            </div>
+            {([['logo', 'Logotipo', 360, 66000], ['backgroundImage', 'Imagem de fundo', 850, 132000]] as const).map(([key, label, size, limit]) =>
+              <div key={key} className="space-y-1">
+                <Field label={label}><input className={field} type="file" accept={imageTypes} onChange={event => {
+                  const file = event.target.files?.[0]
+                  event.target.value = ''
+                  if (file) void run(async () => editDesign({ [key]: await prepareFlyerImage(file, size, limit) }))
+                }} /></Field>
+                {editablePreview && key === 'backgroundImage' && <FlyerBackgroundCarousel onSelect={url => void run(async () => {
+                  const response = await fetch(url)
+                  if (!response.ok) throw new Error('Não foi possível carregar o fundo selecionado.')
+                  editDesign({ backgroundImage: await prepareFlyerImage(await response.blob(), size, limit) })
+                })} />}
+                {design[key] && <button type="button" className="text-sm font-semibold text-indigo-600 dark:text-indigo-300" onClick={() => editDesign({ [key]: '' })}>Remover {label.toLowerCase()}</button>}
+              </div>,
+            )}
+            {design.logo && <Field label="Tamanho do logotipo">
+              <input type="range" className="mt-1 block w-full" min={50} max={160} value={design.logoScale ?? 100}
+                onChange={event => editDesign({ logoScale: event.target.valueAsNumber })} />
+            </Field>}
+            {design.logo && <ProductCutout key={design.logo} url={design.logo} buttonLabel="Remover fundo do logotipo"
+              onApply={async file => editDesign({ logo: await prepareFlyerImage(file, 360, 66000) })} />}
+            {documentMode && <label className="flex items-center gap-2 text-sm font-medium">
+              <input type="checkbox" checked={design.grouped} onChange={event => editDesign({ grouped: event.target.checked })} /> Separar páginas por categoria
+            </label>}
+          </section>
+          <section className={panel}>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="font-bold">Produtos <span className="ml-1 text-sm font-medium text-slate-500">{products.length}/{FLYER_LIMIT}</span></h2>
+              <button type="button" className={secondary} disabled={products.length >= FLYER_LIMIT} onClick={() => {
+                appendProducts([{ name: 'Novo produto', category: '', price: '', originalPrice: '', discount: '', imageUrl: '' }])
+                setOpenProduct(products.length)
+              }}><Plus size={16} /> Adicionar</button>
+            </div>
+            <label className={`${secondary} cursor-pointer`}>
+              <Upload size={16} /> Importar CSV
+              <input type="file" className="sr-only" accept=".csv,text/csv" onChange={event => {
+                const file = event.target.files?.[0]
+                event.target.value = ''
+                if (file) void run(async () => {
+                  if (file.size > 2 * 1024 * 1024) throw new Error('Selecione um CSV de até 2 MB.')
+                  appendProducts(parseProductCsv(await file.text()).map(flyerProduct))
+                })
+              }} />
+            </label>
+            <div className="flex flex-wrap items-end gap-2">
+              <div className="min-w-40 flex-1">
+                <Field label="Campanha salva"><select className={field} value={selectedCampaign} onChange={event => setSelectedCampaign(event.target.value)}>
+                  <option value="">Selecione uma campanha</option>
+                  {campaigns.map(campaign => <option key={campaign.id} value={campaign.id}>{campaign.name}</option>)}
+                </select></Field>
+              </div>
+              <button type="button" className={secondary} disabled={!selectedCampaign} onClick={() => void run(importCampaign)}>Importar produtos</button>
+            </div>
+            {moreCampaigns && <button type="button" className={secondary} onClick={() => { setMoreCampaigns(false); setCampaignPage(page => page + 1) }}>Mais campanhas</button>}
+            <div className="divide-y divide-slate-200 dark:divide-slate-700">
+              {products.map((product, index) => {
+                const fieldErrors = documentMode ? null : printProductErrors(product)
+                const glow = product.glow ?? PRODUCT_GLOW_DEFAULTS
+                return (
+                <div key={index} className={`min-w-0 py-2 ${dropTarget === index ? 'border-t-2 border-t-indigo-500' : ''}`}
+                  onDragOver={event => {
+                    if (!busy && draggedProduct.current !== null) {
+                      event.preventDefault()
+                      event.dataTransfer.dropEffect = 'move'
+                      setDropTarget(index)
+                    }
+                  }}
+                  onDrop={event => {
+                    event.preventDefault()
+                    if (!busy && draggedProduct.current !== null) moveProduct(draggedProduct.current, index)
+                    draggedProduct.current = null
+                    setDropTarget(null)
+                  }}>
+                  <div className="flex items-center gap-2">
+                    <span draggable={!busy} role="img" aria-label={`Arrastar ${product.name}`} title="Arraste para reordenar"
+                      className="cursor-grab rounded p-2 text-slate-500 active:cursor-grabbing"
+                      onDragStart={event => {
+                        draggedProduct.current = index
+                        event.dataTransfer.effectAllowed = 'move'
+                        event.dataTransfer.setData('text/plain', String(index))
+                      }}
+                      onDragEnd={() => { draggedProduct.current = null; setDropTarget(null) }}><GripVertical size={17} aria-hidden /></span>
+                    <button type="button" aria-expanded={openProduct === index} className="min-w-0 flex-1 break-words py-2 text-left text-sm font-semibold" onClick={() => setOpenProduct(openProduct === index ? null : index)}>
+                      {product.name || 'Produto sem nome'} {product.category && <span className="font-normal text-slate-500">· {product.category}</span>}
+                      {product.featured && <span className="ml-2 font-semibold text-indigo-600 dark:text-indigo-300">Oferta principal</span>}
+                    </button>
+                  </div>
+                  {openProduct === index && <div className="space-y-3 pb-2">
+                    {productFields.map(([key, label, max]) => {
+                      const fieldError = fieldErrors?.[key]
+                      const invalidPrice = (key === 'price' || key === 'originalPrice') && Boolean(product[key].trim()) && !Number.isFinite(priceNumber(product[key]))
+                      const errorId = `product-${index}-${key}-error`
+                      return <div key={key}>
+                        <Field label={label}>
+                          <input className={field} maxLength={max} value={key === 'imageUrl' && product.imageUrl.startsWith('data:') ? '' : product[key]}
+                            aria-invalid={(documentMode ? invalidPrice : Boolean(fieldError)) || undefined}
+                            aria-describedby={fieldError ? errorId : undefined}
+                            onChange={event => editProduct(index, { [key]: event.target.value })} />
+                        </Field>
+                        {fieldError && <p id={errorId} className="mt-1 text-sm text-red-600 dark:text-red-300">{fieldError}</p>}
+                      </div>
+                    })}
+                    {documentMode && ([product.price, product.originalPrice].some(price => price.trim() && !Number.isFinite(priceNumber(price)))) &&
+                      <p className="text-sm text-amber-700 dark:text-amber-300">Use valores como 19,90. Preços promocionais inválidos aparecem como “Preço sob consulta”.</p>}
+                    {documentMode && <label className="flex items-center gap-2 text-sm font-medium">
+                      <input type="checkbox" checked={Boolean(product.featured)} onChange={event => {
+                        const featured = event.target.checked
+                        setFlyer(current => ({
+                          ...current, products: current.products.map((item, position) => ({
+                            ...item, featured: featured && position === index,
+                          })),
+                        }))
+                      }} /> Marcar como oferta principal
+                    </label>}
+                    {editablePreview && <>
+                      <Field label="Etiqueta promocional">
+                        <select className={field} value={product.offerLabel ?? 'OFERTA'} onChange={event => editProduct(index, {
+                          offerLabel: event.target.value as FlyerProduct['offerLabel'],
+                        })}>
+                          {OFFER_LABELS.map(label => <option key={label}>{label}</option>)}
+                        </select>
+                      </Field>
+                      <div className="flex flex-wrap gap-4">
+                        {([
+                          ['offerColor', 'Cor da faixa da oferta', design.primary],
+                          ['discountColor', 'Cor do selo de desconto', design.template === 'professional' ? '#c51b2a' : design.accent],
+                          ['offerTextColor', 'Texto da oferta', contrast(product.offerColor ?? design.primary)],
+                          ['discountTextColor', 'Texto do selo de desconto', contrast(product.discountColor ?? (design.template === 'professional' ? '#c51b2a' : design.accent))],
+                          ['oldPriceColor', 'Cor da caixa do preço anterior', '#fff8df'],
+                        ] as const)
+                          .map(([key, label, fallback]) => (
+                            <label key={key} className="flex items-center gap-2 text-sm">
+                              {label}
+                              <input type="color" className="h-8 w-12" value={product[key] ?? fallback}
+                                onChange={event => editProduct(index, { [key]: event.target.value })} />
+                            </label>
+                          ))}
+                      </div>
+                      {(product.offerColor || product.discountColor || product.offerTextColor || product.discountTextColor || product.oldPriceColor) && <button type="button" className={secondary}
+                        onClick={() => editProduct(index, { offerColor: undefined, discountColor: undefined, offerTextColor: undefined, discountTextColor: undefined, oldPriceColor: undefined })}>Restaurar cores da promoção</button>}
+                      {product.textPositions && Object.keys(product.textPositions).length > 0 &&
+                        <button type="button" className={secondary} onClick={() => editProduct(index, { textPositions: undefined })}>
+                          Restaurar posições dos textos
+                        </button>}
+                      {product.imageUrl && <div className="space-y-2">
+                        {([
+                          ['photoScale', 'Escala da foto', 50, MAX_FLYER_PHOTO_SCALE],
+                          ['photoX', 'Posição horizontal', -100, 100],
+                          ['photoY', 'Posição vertical', -100, 100],
+                        ] as const).map(([key, label, min, max]) => (
+                          <Field key={key} label={label}>
+                            <input className="block w-full" type="range" min={min} max={max} value={product[key] ?? PHOTO_DEFAULTS[key]}
+                              onChange={event => editProduct(index, { [key]: event.target.valueAsNumber })} />
+                          </Field>
+                        ))}
+                        <button type="button" className={secondary} onClick={() => editProduct(index, PHOTO_DEFAULTS)}>Centralizar foto</button>
+                        <div className="mt-3 space-y-3 rounded-xl border border-slate-200 p-3 dark:border-slate-700">
+                          <label className="flex items-center gap-2 text-sm font-semibold">
+                            <input type="checkbox" checked={glow.enabled}
+                              onChange={event => editProduct(index, { glow: { ...glow, enabled: event.target.checked } })} />
+                            Brilho do produto
+                          </label>
+                          {glow.enabled && <>
+                            <label className="flex items-center justify-between gap-2 text-sm">
+                              Cor do brilho
+                              <input type="color" className="h-8 w-12" value={glow.color}
+                                onChange={event => editProduct(index, { glow: { ...glow, color: event.target.value } })} />
+                            </label>
+                            {([['intensity', 'Intensidade do brilho', 0, MAX_GLOW_INTENSITY], ['blur', 'Difusão do brilho', 1, 10]] as const).map(([key, label, min, max]) => (
+                              <Field key={key} label={label}>
+                                <span aria-hidden="true" className="ml-2 text-slate-500">{glow[key]}%</span>
+                                <input aria-label={label} type="range" className="block w-full" min={min} max={max} value={glow[key]}
+                                  onChange={event => editProduct(index, { glow: { ...glow, [key]: event.target.valueAsNumber } })} />
+                              </Field>
+                            ))}
+                          </>}
+                        </div>
+                      </div>}
+                      <Field label="Fotos secundárias (até 3)">
+                        <input className={field} type="file" multiple accept={imageTypes} disabled={(product.detailPhotos?.length ?? 0) >= 3} onChange={event => {
+                          const files = Array.from(event.target.files ?? [])
+                          event.target.value = ''
+                          if (files.length) void run(async () => {
+                            const details = product.detailPhotos ?? []
+                            if (details.length + files.length > 3) throw new Error('Adicione até três fotos secundárias por produto.')
+                            const uploaded = await Promise.all(files.map(file => prepareFlyerImage(file, 160, 2400)))
+                            editProduct(index, { detailPhotos: [...details, ...uploaded] })
+                          })
+                        }} />
+                      </Field>
+                      {(product.detailPhotos ?? []).map((url, detailIndex) => (
+                        <div key={detailIndex} className="flex items-center gap-3">
+                          <img src={url} alt={`Foto secundária ${detailIndex + 1}`} className="h-10 w-10 rounded-full object-cover" />
+                          <button type="button" className={secondary} onClick={() => editProduct(index, {
+                            detailPhotos: product.detailPhotos?.filter((_, photoIndex) => photoIndex !== detailIndex),
+                          })}>Remover foto secundária {detailIndex + 1}</button>
+                        </div>
+                      ))}
+                    </>}
+                    {video && <Field label="Duração desta oferta (segundos)">
+                      <input type="number" min={1} max={60} step={1} className={field} placeholder={String(video.duration)}
+                        value={product.duration ?? ''} onChange={event => editProduct(index, {
+                          duration: event.target.value === '' ? undefined : event.target.valueAsNumber,
+                        })} />
+                    </Field>}
+                    <Field label="Enviar foto do produto"><input className={field} type="file" accept={imageTypes} onChange={event => {
+                      const file = event.target.files?.[0]
+                      event.target.value = ''
+                      if (file) void run(async () => editProduct(index, { imageUrl: await prepareFlyerImage(file, 420, 15000) }))
+                    }} /></Field>
+                    {(print || documentMode) && product.imageUrl && <ProductCutout key={product.imageUrl} url={product.imageUrl} onApply={async file => {
+                      editProduct(index, { imageUrl: await prepareFlyerImage(file, 420, 15000) })
+                    }} />}
+                    <div className="flex flex-wrap gap-2">
+                      <button type="button" className={secondary} disabled={!index} onClick={() => moveProduct(index, index - 1)}>Subir</button>
+                      <button type="button" className={secondary} disabled={index === products.length - 1} onClick={() => moveProduct(index, index + 1)}>Descer</button>
+                      {product.imageUrl && <button type="button" className={secondary} onClick={() => editProduct(index, { imageUrl: '' })}>Remover foto</button>}
+                      <button type="button" className={secondary} onClick={() => {
+                        setFlyer(current => ({ ...current, products: current.products.filter((_, position) => position !== index) }))
+                        setOpenProduct(null)
+                      }}>Excluir produto</button>
+                    </div>
+                  </div>}
+                </div>
+                )
+              })}
+            </div>
+          </section>
+        </fieldset>
+        {video ? <VideoPreview products={products} design={design} settings={video} name={flyer.name} invalid={invalidVideo} busy={busy} /> :
+        <section aria-label={printMode ? 'Prévias de impressão' : 'Prévias do encarte'} className={`min-w-0 rounded-2xl bg-slate-200/70 p-4 dark:bg-slate-900 sm:p-6 ${editablePreview ? 'xl:sticky xl:top-24 xl:max-h-[calc(100dvh-7rem)] xl:overflow-y-auto' : ''}`}>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="font-bold">{printMode ? 'Prévia de impressão' : 'Prévia do encarte'}</h2>
+            <span className="text-sm text-slate-600 dark:text-slate-400">{pages.length} {pages.length === 1 ? 'página' : 'páginas'} · {print?.kind === 'poster' ? print.paper : 'A4'}{print && ` · ${paper.width} × ${paper.height} mm`}</span>
+          </div>
+          {print && <p className="mb-4 text-sm text-slate-600 dark:text-slate-400">Para manter as medidas, imprima o PDF em tamanho real (100%).</p>}
+          {editablePreview && <p className="mb-4 text-sm text-slate-600 dark:text-slate-400">
+            Arraste o logotipo, o nome da loja, o subtítulo, o texto da categoria, a imagem de fundo ou os elementos do produto para ajustar a posição.
+          </p>}
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,260px),1fr))] gap-5">
+            {(pages.length ? pages : printError ? [] : [emptyPage]).map((page, index) => <FlyerPreview key={index} page={page} design={design}
+              index={index} total={pages.length} busy={busy}
+              onMoveDesignLayer={editablePreview ? (layer, adjustment) => {
+                setFlyer(current => ({ ...current, design: { ...current.design, layerPositions: {
+                  ...current.design.layerPositions, [layer]: { x: adjustment.photoX ?? 0, y: adjustment.photoY ?? 0 },
+                } } }))
+              } : undefined}
+              onMoveLayer={editablePreview ? (product, layer) => {
+                const position = products.indexOf(product)
+                if (position < 0) return undefined
+                if (layer === 'photo') return adjustment => editProduct(position, adjustment)
+                return adjustment => editProduct(position, {
+                  textPositions: { ...product.textPositions, [layer]: { x: adjustment.photoX ?? 0, y: adjustment.photoY ?? 0 } },
+                })
+              } : undefined}
+              onExport={pages.length ? () => void run(() => download('png', index)) : undefined} />)}
+          </div>
+        </section>}
+      </div>
+    </div>
+  )
+}
