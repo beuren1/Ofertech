@@ -15,6 +15,18 @@ function jsonResponse(payload: unknown, status = 200) {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('API errors', () => {
+  it('refreshes the session through the public site origin', async () => {
+    vi.stubGlobal('location', new URL('https://ofertech.vercel.app/plans'))
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ access: 'fixture-session' }))
+    vi.stubGlobal('fetch', fetchMock)
+    vi.resetModules()
+    const { apiRequest: publicApiRequest } = await import('./auth')
+    await publicApiRequest('auth/refresh/', { method: 'POST' })
+    expect(fetchMock).toHaveBeenCalledWith('/api/auth/refresh/', expect.objectContaining({
+      method: 'POST', credentials: 'include',
+    }))
+  })
+
   it.each([
     [0, /não foi possível conectar/i],
     [502, /servidor da Ofertech está indisponível/i],

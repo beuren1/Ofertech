@@ -62,6 +62,7 @@ describe('Ofertech', () => {
     const fetchRequest = vi.fn(async (url: string) => {
       if (url.endsWith('/plans/')) return Response.json([plan])
       if (url.endsWith('/auth/login/')) return Response.json({ access: 'test-token' })
+      if (url.endsWith('/auth/logout/')) return new Response(null, { status: 205 })
       if (url.endsWith('/auth/me/')) return Response.json({ id: 1, name: 'Cliente', profile: { plan: 'free' } })
       if (url.endsWith('/billing/')) return Response.json({
         plan, credits: 0, monthly_limit: 200, used: 0, history: [], checkout_available: false, checkout_blockers: ['buyer_mismatch'],
@@ -77,6 +78,8 @@ describe('Ofertech', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Entrar' }))
     expect(await screen.findByText(/a conta atual não corresponde à conta compradora/i)).toBeTruthy()
     expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Assinar Pro em teste' }).disabled).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Trocar para a conta de teste' }))
+    expect(await screen.findByRole('heading', { name: 'Bem-vindo de volta' })).toBeTruthy()
   })
 
   it('opens the preliminary privacy policy from the public footer', async () => {

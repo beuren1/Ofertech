@@ -1,7 +1,10 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 
-const localApiHost = globalThis.location?.hostname === '127.0.0.1' ? '127.0.0.1' : 'localhost'
-const API_URL = (import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '/api' : `http://${localApiHost}:8000/api`)).replace(/\/+$/, '')
+const hostname = globalThis.location?.hostname
+const localApiHost = hostname === '127.0.0.1' ? '127.0.0.1' : 'localhost'
+// Keep the refresh cookie first-party on the published Vercel site.
+const API_URL = (hostname === 'ofertech.vercel.app' ? '/api'
+  : import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '/api' : `http://${localApiHost}:8000/api`)).replace(/\/+$/, '')
 
 export type AuthUser = {
   id: number

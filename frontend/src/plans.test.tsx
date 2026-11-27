@@ -30,7 +30,8 @@ it('shows disabled paid plan buttons when the test checkout is unavailable', asy
 
   render(<MemoryRouter><PlansPage /></MemoryRouter>)
 
-  const explanation = await screen.findByText(/a conta atual não corresponde à conta compradora/i)
+  const explanations = await screen.findAllByText(/a conta atual não corresponde à conta compradora/i)
+  expect(explanations).toHaveLength(2)
   expect(screen.getByText('Mais popular').closest('article')?.textContent).toContain('Pro')
   expect(screen.getByText('Plano atual')).toBeTruthy()
   expect(screen.getByRole('heading', { name: 'Perguntas sobre planos e créditos' })).toBeTruthy()
@@ -38,7 +39,8 @@ it('shows disabled paid plan buttons when the test checkout is unavailable', asy
   for (const name of ['Assinar Pro em teste', 'Assinar Business em teste']) {
     const button = screen.getByRole<HTMLButtonElement>('button', { name })
     expect(button.disabled).toBe(true)
-    expect(button.getAttribute('aria-describedby')).toBe(explanation.closest('[role="status"]')?.id)
+    const explanation = document.getElementById(button.getAttribute('aria-describedby') ?? '')
+    expect(explanation?.textContent).toMatch(/a conta atual não corresponde à conta compradora/i)
     fireEvent.click(button)
   }
   expect(apiRequest).not.toHaveBeenCalledWith('billing/change/', expect.anything())

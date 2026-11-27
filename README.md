@@ -167,8 +167,9 @@ da plataforma e inclui `RENDER_EXTERNAL_HOSTNAME` nos hosts permitidos.
   pendentes antes de iniciar o Gunicorn.
   Configure `/api/health/` como health check. Ele retorna `200` com `status: ok`
   quando o banco responde e `503` com `status: unavailable` quando há falha de banco.
-- Configure `frontend` como diretório raiz na Vercel. Use `VITE_API_URL=/api` se
-  houver uma configuração anterior apontando diretamente para o Render. Cadastre
+- Configure `frontend` como diretório raiz na Vercel. O domínio público
+  `ofertech.vercel.app` usa `/api` na mesma origem, inclusive para rotas com barra
+  final, para que o cookie de sessão seja enviado. Cadastre
   a origem HTTPS exata da Vercel em `DJANGO_CORS_ALLOWED_ORIGINS`. Para homologação,
   ajuste o destino do rewrite para o Render de teste e autorize sua origem explícita.
 - Confirme no navegador que login, recarregamento e logout usam a mesma origem,

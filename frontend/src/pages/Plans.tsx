@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { apiRequest, getErrorMessage, useAuth } from '../auth'
 import { creditCost, type Billing, type Plan } from '../billing'
 import { BrandLink } from '../components/Brand'
@@ -27,7 +27,6 @@ const paymentLabels: Record<string, string> = {
   charged_back: 'Pagamento contestado',
 }
 
-const checkoutStatusId = 'test-checkout-status'
 const checkoutBlockerMessages: Record<string, string> = {
   mode_disabled: 'O checkout de teste está desligado no servidor. Em homologação, configure MP_MODE=test.',
   access_token_missing: 'O token de acesso do Mercado Pago de teste está ausente no servidor.',
@@ -57,7 +56,8 @@ const creditUnits = {
 } as const
 
 export function PlansPage() {
-  const { accessToken, syncPlan } = useAuth()
+  const { accessToken, syncPlan, logout } = useAuth()
+  const navigate = useNavigate()
   const [plans, setPlans] = useState<Plan[]>([])
   const [billing, setBilling] = useState<Billing | null>(null)
   const [error, setError] = useState('')
@@ -68,10 +68,11 @@ export function PlansPage() {
     : null
   const checkoutAvailable = Boolean(accessToken && billing?.checkout_available)
   const checkoutReasons = accessToken ? billing?.checkout_blockers?.flatMap(code => checkoutBlockerMessages[code] ? [checkoutBlockerMessages[code]] : []) ?? [] : []
+  const buyerMismatch = billing?.checkout_blockers?.includes('buyer_mismatch')
   const checkoutStatus = !accessToken
     ? 'Entre com a conta compradora de teste para contratar.'
     : billing
-      ? 'Checkout de teste indisponível para esta conta. As assinaturas comerciais ainda não foram abertas.'
+      ? 'O servidor informou que o checkout de teste está indisponível para esta conta.'
       : error
         ? 'Não foi possível consultar sua conta. Tente verificar a disponibilidade novamente.'
         : 'Verificando a disponibilidade do checkout de teste…'
@@ -154,18 +155,6 @@ export function PlansPage() {
           )}
         </section>
       )}
-      {!checkoutAvailable && plans.some(plan => plan.code !== 'free') && (
-        <div id={checkoutStatusId} role="status" className="space-y-1 text-sm text-slate-600 dark:text-slate-400">
-          <p>{checkoutStatus}</p>
-          {checkoutReasons.length > 0 && <ul className="list-disc space-y-1 pl-5">
-            {checkoutReasons.map(reason => <li key={reason}>{reason}</li>)}
-          </ul>}
-          {accessToken && !billing && error && <button type="button" disabled={busy}
-            onClick={() => void update()} className="font-semibold text-indigo-700 underline dark:text-indigo-300">
-            Verificar checkout novamente
-          </button>}
-        </div>
-      )}
       <div className="grid gap-5 lg:grid-cols-3">
         {plans.map(plan => (
           <article key={plan.code} className={`flex flex-col ${panel} ${plan.code === 'pro' ? 'ring-2 ring-indigo-500' : ''}`}>
@@ -200,11 +189,34 @@ export function PlansPage() {
               <button
                 className={`mt-5 ${button}`}
                 disabled={busy || !checkoutAvailable}
-                aria-describedby={checkoutAvailable ? undefined : checkoutStatusId}
+                aria-describedby={checkoutAvailable ? undefined : `checkout-status-${plan.code}`}
                 onClick={() => void update(plan.code)}
               >
                 {resumablePlan === plan.code ? 'Continuar para o checkout' : `Assinar ${plan.name} em teste`}
               </button>
+            )}
+            {accessToken && plan.code !== 'free' && !checkoutAvailable && (
+              <div id={`checkout-status-${plan.code}`} className="mt-3 space-y-2 rounded-xl bg-slate-100 p-3 text-sm text-slate-800 dark:bg-slate-800 dark:text-slate-100">
+                <div role="status">
+                  {checkoutReasons.length ? <ul className="list-disc space-y-1 pl-5">
+                    {checkoutReasons.map(reason => <li key={reason}>{reason}</li>)}
+                  </ul> : <p>{checkoutStatus}</p>}
+                </div>
+                {buyerMismatch && <button type="button" disabled={busy} className="font-semibold text-indigo-700 underline dark:text-indigo-300"
+                  onClick={async () => {
+                    setBusy(true)
+                    try {
+                      await logout()
+                      navigate('/login', { state: { returnToPlans: true } })
+                    } finally {
+                      setBusy(false)
+                    }
+                  }}>Trocar para a conta de teste</button>}
+                {(!billing && error || billing && !checkoutReasons.length) && <button type="button" disabled={busy}
+                  onClick={() => void update()} className="font-semibold text-indigo-700 underline dark:text-indigo-300">
+                  Verificar checkout novamente
+                </button>}
+              </div>
             )}
             {!accessToken && plan.code === 'free' && <Link className={`mt-5 inline-block ${button}`} to="/register">Criar conta</Link>}
             {billing?.plan.code === plan.code && <p className="mt-5 font-semibold text-indigo-600">Plano atual</p>}
