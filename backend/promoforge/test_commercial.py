@@ -82,6 +82,8 @@ class CommercialDashboardTests(APITestCase):
             'registrations': 3, 'banners': 3, 'flyers': 0, 'posters': 1,
             'labels': 1, 'video_projects': 1, 'video_exports': 1,
             'poster_exports': 0, 'label_exports': 18,
+            'story_projects': 0, 'story_exports': 0, 'menu_projects': 0, 'menu_exports': 0,
+            'tv_playlists': 0, 'tv_links': 0,
         })
         self.assertEqual(response.data['credits_consumed'], 3)
         self.assertEqual(response.data['billing']['confirmed_payments'], 1)

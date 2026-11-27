@@ -331,3 +331,13 @@ npm run build
 cd ..\backend
 python manage.py test
 ```
+## Módulos profissionais
+
+- **Criar Etiquetas** usa o mesmo gerador de impressão de Cartazes. Escolha um tamanho, ajuste as medidas e as margens e imprima em A4 a 100%. No CSV, as colunas opcionais `unidade` (`un`, `kg` ou `l`), `ean13` e `qrcode` preenchem os códigos. Preserve os zeros à esquerda no EAN. Valide a leitura dos códigos com o tamanho de etiqueta e a impressora que serão usados.
+- **Criar Stories** gera uma arte de 1080 × 1920 por produto. Dentro do editor, escolha o canal e use as guias para manter o conteúdo fora das bordas. Um CSV com vários produtos gera um lote de PNGs. No Pro e Business, é possível baixar cada arte em JPG. A exportação usa 1 crédito por arte.
+- **Criar Cardápio** gera A4, digital vertical ou horizontal para TV. O CSV aceita a coluna `descricao`. Salve o projeto e publique na seção **Cardápio digital** para obter o link e o QR Code. O link mostra a versão salva mais recente e pode ser revogado. A exportação usa 2 créditos por página, com PDF e JPG conforme o plano.
+- **TV de Ofertas** permite montar playlists com ofertas de uma campanha, itens avulsos e banners enviados como imagens. Defina duração, transição e orientação, depois salve e crie um link por aparelho. Abra o link em um navegador compatível na Smart TV ou use um computador via HDMI. O player consulta alterações a cada 30 segundos e mantém a última playlist carregada durante falhas temporárias. Para encerrar o acesso de um aparelho, revogue o link correspondente.
+
+Os custos e limites dos recursos existentes continuam definidos pelas regras de planos do Django. TV de Ofertas usa slides no navegador e não registra uma exportação de vídeo. O painel comercial e seu CSV incluem projetos e exportações de Stories e Cardápios, playlists, links de TV e o uso de Etiquetas.
+
+Antes de publicar, revise a migração `0011_project_share` com `python manage.py migrate --plan` e aplique-a no Render pelo fluxo já configurado de pré-deploy. A migração cria a tabela de links e não altera usuários, projetos existentes ou saldos. Na Vercel, mantenha o proxy de `/api` e o fallback para o React Router, que também atende `/cardapio/:token` e `/tv/player/:token`. Nenhuma variável nova é necessária.

@@ -8,6 +8,8 @@ type Period = { start: string; end: string }
 type Usage = {
   registrations: number; banners: number; flyers: number; posters: number; labels: number;
   video_projects: number; video_exports: number; poster_exports: number; label_exports: number;
+  story_projects?: number; story_exports?: number; menu_projects?: number; menu_exports?: number;
+  tv_playlists?: number; tv_links?: number;
 }
 type Day = Usage & { date: string; active_users: number; credits_consumed: number }
 type Overview = {
@@ -104,6 +106,9 @@ function OverviewContent({ data }: { data: Overview }) {
     ['Encartes salvos', data.totals.flyers], ['Cartazes salvos', data.totals.posters],
     ['Projetos de etiquetas', data.totals.labels], ['Projetos de vídeo', data.totals.video_projects],
     ['Cartazes exportados', data.totals.poster_exports], ['Etiquetas exportadas', data.totals.label_exports],
+    ['Projetos de stories', data.totals.story_projects ?? 0], ['Exportações de stories', data.totals.story_exports ?? 0],
+    ['Cardápios salvos', data.totals.menu_projects ?? 0], ['Exportações de cardápios', data.totals.menu_exports ?? 0],
+    ['Playlists de TV', data.totals.tv_playlists ?? 0], ['Links de TV criados', data.totals.tv_links ?? 0],
   ]
   return <div className="space-y-5">
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">

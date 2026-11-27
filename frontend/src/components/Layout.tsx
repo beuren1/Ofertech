@@ -3,7 +3,7 @@ import { Link, NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, WandSparkles, Library, History, CreditCard, Settings,
   Moon, Sun, Menu, X, Sparkles, LogOut, Store, Newspaper, Printer, Video, Coins,
-  PanelLeftClose, PanelLeftOpen, ShieldCheck
+  PanelLeftClose, PanelLeftOpen, ShieldCheck, Tag, Smartphone, Utensils, Tv
 } from 'lucide-react'
 import { apiRequest, useAuth } from '../auth'
 import { CREDIT_BALANCE_CHANGED, type Billing } from '../billing'
@@ -14,7 +14,11 @@ export const editorLinks = [
   { to: '/bulk', label: 'Criação em massa', icon: Sparkles },
   { to: '/flyers', label: 'Criar Encarte', icon: Newspaper },
   { to: '/print', label: 'Criar Cartaz', icon: Printer },
+  { to: '/labels', label: 'Criar Etiquetas', icon: Tag },
+  { to: '/stories', label: 'Criar Stories', icon: Smartphone },
+  { to: '/menus', label: 'Criar Cardápio', icon: Utensils },
   { to: '/videos', label: 'Criar Vídeo', icon: Video },
+  { to: '/tv', label: 'TV de Ofertas', icon: Tv },
 ]
 
 const nav = [

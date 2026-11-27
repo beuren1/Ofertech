@@ -2,6 +2,10 @@ export type VideoSettings = {
   orientation: 'horizontal' | 'vertical'
   transition: 'fade' | 'slide' | 'zoom'
   duration: number
+  footerText?: string
+  footerColor?: string
+  footerTextColor?: string
+  backgroundOpacity?: number
 }
 
 export const DEFAULT_VIDEO: VideoSettings = { orientation: 'horizontal', transition: 'fade', duration: 5 }

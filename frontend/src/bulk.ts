@@ -12,6 +12,10 @@ export type BulkProduct = {
   sourceImageUrl?: string
   localImageKey?: string
   imageAssetId?: number
+  saleUnit?: string
+  barcode?: string
+  qrUrl?: string
+  description?: string
 }
 
 const automaticTemplates = [
@@ -243,6 +247,10 @@ export function parseProductCsv(text: string): BulkProduct[] {
   const categoryIndex = headers.findIndex(header =>
     ['categoria', 'category'].includes(header),
   )
+  const unitIndex = headers.findIndex(header => ['unidade', 'saleunit'].includes(header))
+  const barcodeIndex = headers.findIndex(header => ['ean', 'ean13', 'codigodebarras', 'barcode'].includes(header))
+  const qrIndex = headers.findIndex(header => ['qrcode', 'qrurl', 'urlqr'].includes(header))
+  const descriptionIndex = headers.findIndex(header => ['descricao', 'description'].includes(header))
   if (nameIndex < 0) {
     throw new Error('Inclua uma coluna de produto com cabeçalho "produto" ou "nome".')
   }
@@ -259,6 +267,10 @@ export function parseProductCsv(text: string): BulkProduct[] {
       discount: discountIndex < 0 ? '' : cells[discountIndex] ?? '',
       imageUrl: imageIndex < 0 ? '' : cells[imageIndex] ?? '',
       category: categoryIndex < 0 ? '' : cells[categoryIndex] ?? '',
+      ...(unitIndex >= 0 && cells[unitIndex] ? { saleUnit: cells[unitIndex].trim().toLowerCase() } : {}),
+      ...(barcodeIndex >= 0 && cells[barcodeIndex] ? { barcode: cells[barcodeIndex].trim() } : {}),
+      ...(qrIndex >= 0 && cells[qrIndex] ? { qrUrl: cells[qrIndex].trim() } : {}),
+      ...(descriptionIndex >= 0 && cells[descriptionIndex] ? { description: cells[descriptionIndex].trim().slice(0, 280) } : {}),
     }
   })
 }

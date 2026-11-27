@@ -1,14 +1,19 @@
 import { loadProductImage } from './bulk'
-import { contrast, drawImage, drawProductName, fitText, flyerDiscount, priceNumber, priceText, type FlyerDesign, type FlyerProduct } from './flyers'
+import { contrast, discountBadge, drawImage, drawProductName, fitText, flyerDiscount, priceNumber, priceText, type FlyerDesign, type FlyerProduct } from './flyers'
+import { flyerImageLayout, paintFlyerDetails, paintFlyerPhoto } from './flyerOfferLayout'
 import { VIDEO_FPS, videoFrame, videoRecordingFormat, videoSize, videoTimeline } from './videoTimeline'
 
 export async function prepareVideo(canvas: HTMLCanvasElement, products: FlyerProduct[], design: FlyerDesign) {
   const settings = design.video
   if (!settings || !products.length) throw new Error('Adicione um produto para montar o vídeo.')
-  const { transition } = settings
+  const { transition, backgroundOpacity = 20, footerText, footerColor = '#0f172a', footerTextColor } = settings
   const [logo, background, ...photos] = await Promise.all(
-    [design.logo, design.backgroundImage, ...products.map(product => product.imageUrl)].map(loadProductImage),
+    [design.logo, design.backgroundImage, ...products.map(product => product.slideImageUrl || product.imageUrl)].map(loadProductImage),
   )
+  const detailResults = await Promise.all(products.map(product =>
+    Promise.all((product.detailPhotos ?? []).slice(0, 3).map(loadProductImage)),
+  ))
+  const details = detailResults.map(items => items.flatMap(item => item.image ? [item.image] : []))
   const { width, height } = videoSize(settings.orientation)
   canvas.width = width
   canvas.height = height
@@ -39,8 +44,13 @@ export async function prepareVideo(canvas: HTMLCanvasElement, products: FlyerPro
     context.scale(scale, scale)
     context.translate(-width / 2, -height / 2)
     block(design.background, 0, 0, width, height)
+    if (product.slideImageUrl && photos[index].image) {
+      drawImage(context, photos[index].image, 0, 0, width, height)
+      context.restore()
+      return
+    }
     if (background.image) {
-      context.globalAlpha = alpha * 0.20
+      context.globalAlpha = alpha * backgroundOpacity / 100
       drawImage(context, background.image, 0, 0, width, height, true)
       context.globalAlpha = alpha
     }
@@ -74,12 +84,14 @@ export async function prepareVideo(canvas: HTMLCanvasElement, products: FlyerPro
       context.stroke()
     }
     const image = photos[index].image
-    if (image) drawImage(context, image, photo.x + 32, photo.y + 32, photo.w - 64, photo.h - 64)
+    const photoLayout = flyerImageLayout({ x: photo.x, y: photo.y, width: photo.w, height: photo.h }, details[index].length, product.photoScale)
+    if (image) paintFlyerPhoto(context, image, photoLayout.main, product)
     else {
       context.fillStyle = '#475569'
       font(36, 500)
       fitText(context, 'Foto indisponível', photo.x + 36, photo.y + photo.h / 2, photo.w - 72)
     }
+    paintFlyerDetails(context, details[index], photoLayout.details, design.accent)
     block('#ffffff', textLeft - 24, nameY - (vertical ? 155 : 180), textWidth + 24, vertical ? 647 : 648, radius)
     if (design.subtitle) {
       context.fillStyle = design.subtitleColor ?? design.primary
@@ -91,23 +103,38 @@ export async function prepareVideo(canvas: HTMLCanvasElement, products: FlyerPro
     drawProductName(context, product.name, textLeft, nameY - 42, textWidth - 24, 91)
     if (Number.isFinite(priceNumber(product.originalPrice))) {
       const oldPrice = priceText(product.originalPrice)
-      context.fillStyle = '#475569'
+      const oldPriceBackground = product.oldPriceColor ?? '#fff8df'
       font(50, 500)
-      fitText(context, oldPrice, textLeft, nameY + 143, textWidth - 24)
-      context.fillRect(textLeft, nameY + 128, Math.min(textWidth - 24, context.measureText(oldPrice).width), 4)
+      const oldPriceWidth = Math.min(textWidth - 24, context.measureText(oldPrice).width + 30)
+      block(oldPriceBackground, textLeft, nameY + 98, oldPriceWidth, 62, 12)
+      context.fillStyle = contrast(oldPriceBackground)
+      fitText(context, oldPrice, textLeft + 15, nameY + 145, oldPriceWidth - 30)
+      context.fillRect(textLeft + 15, nameY + 128, oldPriceWidth - 30, 4)
     }
     const offer = priceText(product.price)
-    context.fillStyle = design.primary
+    const offerColor = product.offerColor ?? design.primary
+    block(offerColor, textLeft, nameY + 179, textWidth - 24, 144, radius)
+    context.fillStyle = product.offerTextColor ?? contrast(offerColor)
+    font(24, 700)
+    fitText(context, product.offerLabel ?? 'OFERTA', textLeft + 20, nameY + 210, textWidth - 64)
     font(135, 800)
-    font(Math.min(135, 135 * (textWidth - 36) / context.measureText(offer).width), 800)
-    fitText(context, offer, textLeft, nameY + 296, textWidth - 24)
+    font(Math.min(103, 135 * (textWidth - 64) / context.measureText(offer).width), 800)
+    fitText(context, offer, textLeft + 20, nameY + 299, textWidth - 64)
     const discount = flyerDiscount(product)
     if (discount && design.badge !== 'none') {
       font(43, 800)
       const badgeWidth = Math.min(textWidth - 24, context.measureText(discount).width + 56)
-      block(design.accent, textLeft, nameY + 338, badgeWidth, 87, design.badge === 'pill' ? 44 : 8)
-      context.fillStyle = contrast(design.accent)
+      const badgeColor = product.discountColor ?? design.accent
+      discountBadge(context, design.badge, textLeft, nameY + 338, badgeWidth, 87, badgeColor)
+      context.fillStyle = product.discountTextColor ?? contrast(badgeColor)
       fitText(context, discount, textLeft + 27, nameY + 394, badgeWidth - 54)
+    }
+    if (footerText?.trim()) {
+      block(footerColor, 0, height - 68, width, 68)
+      context.fillStyle = footerTextColor ?? contrast(footerColor)
+      context.textAlign = 'center'
+      font(32, 600)
+      fitText(context, footerText.trim(), width / 2, height - 24, width - pad * 2)
     }
     context.restore()
   }
@@ -124,7 +151,7 @@ export async function prepareVideo(canvas: HTMLCanvasElement, products: FlyerPro
     return index
   }
 
-  return { timeline, render, missing: [logo, background, ...photos].filter(image => image.error).length }
+  return { timeline, render, missing: [logo, background, ...photos, ...detailResults.flat()].filter(image => image.error).length }
 }
 
 export async function recordVideo(

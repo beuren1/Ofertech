@@ -13,6 +13,18 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
+it('exports the selected story as a JPG from the shared renderer', async () => {
+  vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation((callback, type) => {
+    callback(new Blob([], { type }))
+  })
+  const { design } = createFlyer(false, false, false, true)
+  const pages = [{ category: 'Primeiro', products: [] }, { category: 'Segundo', products: [] }]
+  const story = await exportFlyer(pages, design, 'jpeg', 1)
+  expect(story.extension).toBe('jpg')
+  expect(story.blob.type).toBe('image/jpeg')
+  expect(renderFlyerPage).toHaveBeenCalledWith(expect.any(HTMLCanvasElement), pages[1], design, 1, 2, FLYER_EXPORT_SCALE)
+})
+
 it('keeps square and vertical banners at their own proportions in the same PDF', async () => {
   const bytes = Uint8Array.of(255, 216, 255, 217)
   const jpeg = Object.assign(new Blob([bytes], { type: 'image/jpeg' }), { arrayBuffer: async () => bytes.buffer })

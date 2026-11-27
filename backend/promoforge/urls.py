@@ -1,6 +1,7 @@
 ﻿from django.urls import path
 from rest_framework.routers import DefaultRouter
 from .flyers import FlyerProjectViewSet
+from .project_shares import ProjectSharesView, PublicProjectView, RevokeProjectShareView
 from .commercial import (
     CommercialAdjustView, CommercialHistoryView, CommercialOverviewView, CommercialPaymentsView,
     CommercialReportView, CommercialSubscriptionsView, CommercialUsersView, PrintExportView, VideoExportView,
@@ -32,6 +33,9 @@ router.register('promotions', PromotionViewSet, basename='promotion')
 from .billing import ArtworkCreditsView, BillingView, CreditOperationView, MercadoPagoWebhookView, PlanChangeView, PlansView
 
 urlpatterns = [
+    path('flyers/<int:project_id>/shares/', ProjectSharesView.as_view()),
+    path('flyers/<int:project_id>/shares/<int:share_id>/', RevokeProjectShareView.as_view()),
+    path('public/projects/<str:token>/', PublicProjectView.as_view()),
     path('admin-dashboard/overview/', CommercialOverviewView.as_view()),
     path('admin-dashboard/users/', CommercialUsersView.as_view()),
     path('admin-dashboard/users/<int:user_id>/history/', CommercialHistoryView.as_view()),

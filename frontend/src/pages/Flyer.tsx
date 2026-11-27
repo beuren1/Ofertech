@@ -17,6 +17,9 @@ import { MAX_FLYER_PHOTO_SCALE, MAX_GLOW_INTENSITY, OFFER_LABELS, PHOTO_DEFAULTS
 import type { FlyerDesignLayer } from '../flyerOfferLayout'
 import { VideoControls, VideoPreview } from '../components/VideoPreview'
 import { DEFAULT_PRINT, paginatePrint, printPaper, printSettingsError, type PrintSettings } from '../printLayout'
+import { STORY_CHANNELS, type StoryChannel } from '../storyLayout'
+import { MENU_CATEGORIES, MENU_FORMATS, menuCanvasSize, type MenuFormat } from '../menuLayout'
+import { ProjectShares } from '../components/ProjectShares'
 import {
   contrast, createFlyer, FLYER_LAYOUTS, FLYER_LIMIT, FLYER_TEMPLATES, flyerCanvasSize,
   flyerGrid, flyerProduct, paginateFlyer, prepareFlyerImage, priceNumber, printProductErrors, reopenFlyer,
@@ -44,18 +47,29 @@ function Field({ label, children, className = 'block' }: { label: string; childr
 
 const emptyPage: FlyerPage = { category: '', products: [] }
 
+function matchesEditor(design: Pick<FlyerDesign, 'print' | 'video' | 'story' | 'menu' | 'tv'>, mode: {
+  printMode: boolean; videoMode: boolean; storyMode: boolean; menuMode: boolean; labelsMode: boolean; tvMode: boolean
+}) {
+  return Boolean(design.print) === mode.printMode && Boolean(design.video) === mode.videoMode
+    && Boolean(design.story) === mode.storyMode && Boolean(design.menu) === mode.menuMode
+    && Boolean(design.tv) === mode.tvMode
+    && (!mode.labelsMode || design.print?.kind === 'labels')
+}
+
 async function loadFlyerBackground(url: string) {
   const response = await fetch(url)
   if (!response.ok) throw new Error('Não foi possível carregar o fundo escolhido.')
   return prepareFlyerImage(await response.blob(), 850, 132000)
 }
 
-export function FlyerPageEditor({ printMode = false, videoMode = false, initialSearch = '' }: { printMode?: boolean; videoMode?: boolean; initialSearch?: string }) {
+export function FlyerPageEditor({ printMode = false, labelsMode = false, videoMode = false, storyMode = false, menuMode = false, tvMode = false, initialSearch = '' }: {
+  printMode?: boolean; labelsMode?: boolean; videoMode?: boolean; storyMode?: boolean; menuMode?: boolean; tvMode?: boolean; initialSearch?: string
+}) {
   const { accessToken, user } = useAuth()
   const requestLogin = useCreationLogin()
   const free = user?.profile.plan === 'free'
   const lastExport = useRef<{ design: FlyerDesign; pages: FlyerPage[]; request: string; operation: CreditOperation; artifact: Awaited<ReturnType<typeof exportFlyer>>; confirmed: boolean }>()
-  const { flyer, setFlyer, resetFlyer, undo, redo, canUndo, canRedo } = useFlyerHistory(() => createFlyer(printMode, videoMode))
+  const { flyer, setFlyer, resetFlyer, undo, redo, canUndo, canRedo } = useFlyerHistory(newProject)
   const [currentId, setCurrentId] = useState<number | null>(null)
   const [campaigns, setCampaigns] = useState<SavedCampaign[]>([])
   const [projects, setProjects] = useState<FlyerSummary[]>([])
@@ -76,31 +90,35 @@ export function FlyerPageEditor({ printMode = false, videoMode = false, initialS
   const appliedLink = useRef(false)
   const previewPages = useRef<HTMLDivElement>(null)
   const { products, design } = flyer
-  const { layout, grouped, print, video } = design
-  const documentMode = !printMode && !videoMode
-  const editablePreview = documentMode || print?.kind === 'poster'
-  const kindQuery = videoMode ? '&kind=video' : printMode ? '&kind=print' : ''
+  const { layout, grouped, print, video, menu } = design
+  const documentMode = !printMode && !videoMode && !storyMode && !menuMode
+  const editablePreview = documentMode || storyMode || menuMode || print?.kind === 'poster'
+  const kindQuery = tvMode ? '&kind=tv' : menuMode ? '&kind=menu' : storyMode ? '&kind=story' : labelsMode ? '&kind=labels' : videoMode ? '&kind=video' : printMode ? '&kind=print' : ''
   const validDuration = (duration: number) => Number.isInteger(duration) && duration >= 1 && duration <= 60
   const invalidVideo = Boolean(video && (!validDuration(video.duration) || products.some(product => product.duration !== undefined && !validDuration(product.duration))))
   const settingsError = print ? printSettingsError(print) : ''
   const calculatedPages = useMemo(() => {
     if (videoMode) return []
+    if (storyMode) return products.map(product => ({ category: product.category, products: [product] }))
     if (!print) return paginateFlyer(products, { layout, grouped })
     return settingsError ? [] : paginatePrint(products, print).map(items => ({ category: '', products: items }))
-  }, [products, layout, grouped, print, settingsError, videoMode])
+  }, [products, layout, grouped, print, settingsError, videoMode, storyMode])
   const printError = settingsError || (print && calculatedPages.length > 100 ? 'Reduza a quantidade para exportar até 100 folhas por vez.' : '')
   const pages = printError ? [] : calculatedPages
-  const pageCost = creditCost(print?.kind ?? 'flyer', user?.profile.plan)
+  const exportKind = menuMode ? 'menu' : storyMode ? 'story' : print?.kind ?? 'flyer'
+  const pageCost = creditCost(exportKind, user?.profile.plan)
   const freeBatchExceeded = free && pages.length > 5
   const paper = printPaper(print)
+  const menuSize = menu ? menuCanvasSize(menu) : undefined
+  const editorTitle = tvMode ? 'TV de Ofertas' : menuMode ? 'Criar Cardápio' : storyMode ? 'Criar Stories' : labelsMode ? 'Criar Etiquetas' : videoMode ? 'Criar Vídeo' : printMode ? 'Criar Cartaz' : 'Criar Encarte'
 
   useEffect(() => {
     if (!initialSearch || appliedLink.current) return
     const params = new URLSearchParams(initialSearch)
     const id = params.get('project_id')
     if (id && !accessToken) return
-    const template = !printMode && !videoMode ? flyerTemplates.find(([key]) => key === params.get('template')) : undefined
-    const model = findGalleryModel(printMode ? '/print' : videoMode ? '/videos' : '/flyers', initialSearch)
+    const template = documentMode ? flyerTemplates.find(([key]) => key === params.get('template')) : undefined
+    const model = findGalleryModel(tvMode ? '/tv' : menuMode ? '/menus' : storyMode ? '/stories' : labelsMode ? '/labels' : printMode ? '/print' : videoMode ? '/videos' : '/flyers', initialSearch)
     if (!id && !template && !model) return
     let active = true
     inProgress.current = true
@@ -109,7 +127,7 @@ export function FlyerPageEditor({ printMode = false, videoMode = false, initialS
       if (id) {
         if (!/^[1-9]\d*$/.test(id)) throw new Error('Projeto inválido.')
         const project = await apiRequest<SavedFlyer>(`flyers/${id}/`, { accessToken: accessToken ?? undefined })
-        if (Boolean(project.design.print) !== printMode || Boolean(project.design.video) !== videoMode) throw new Error('Selecione um projeto deste editor.')
+        if (!matchesEditor(project.design, { printMode, videoMode, storyMode, menuMode, labelsMode, tvMode })) throw new Error('Selecione um projeto deste editor.')
         if (!active) return
         resetFlyer(reopenFlyer(project))
         setCurrentId(project.id)
@@ -121,7 +139,7 @@ export function FlyerPageEditor({ printMode = false, videoMode = false, initialS
       const [key, name, , style, title] = preset
       const backgroundImage = await loadFlyerBackground(flyerTemplateImage(key))
       if (!active) return
-      const draft = createFlyer(printMode, videoMode)
+      const draft = createFlyer(printMode, videoMode, labelsMode, storyMode, menuMode, tvMode)
       const { primary, accent, background, font, border, badge } = FLYER_TEMPLATES[style]
       resetFlyer({ name, products: model?.products.map(flyerProduct) ?? [], design: { ...draft.design, template: style, title, primary, accent, background, font, border, badge, backgroundImage } })
     }
@@ -133,7 +151,11 @@ export function FlyerPageEditor({ printMode = false, videoMode = false, initialS
       }
     })
     return () => { active = false; inProgress.current = false }
-  }, [accessToken, initialSearch, printMode, videoMode, resetFlyer])
+  }, [accessToken, initialSearch, printMode, labelsMode, videoMode, storyMode, menuMode, tvMode, documentMode, resetFlyer])
+
+  function newProject() {
+    return createFlyer(printMode, videoMode, labelsMode, storyMode, menuMode, tvMode)
+  }
 
   useEffect(() => {
     function handleHistory(event: KeyboardEvent) {
@@ -258,7 +280,7 @@ export function FlyerPageEditor({ printMode = false, videoMode = false, initialS
     if (!flyer.name.trim() || !design.title.trim() || products.some(product => !product.name.trim())) {
       throw new Error('Preencha o nome do projeto, o título e o nome de cada produto.')
     }
-    if (print || video) validateProductFields(products)
+    if (print || video || storyMode || menuMode) validateProductFields(products)
     const saved = await apiRequest<SavedFlyer>(currentId ? `flyers/${currentId}/` : 'flyers/', {
       accessToken, method: currentId ? 'PUT' : 'POST', body: { ...flyer, design },
     })
@@ -272,14 +294,31 @@ export function FlyerPageEditor({ printMode = false, videoMode = false, initialS
   async function openProject() {
     if (!accessToken || !selectedProject) return
     const saved = await apiRequest<SavedFlyer>(`flyers/${Number(selectedProject)}/`, { accessToken })
-    if (Boolean(saved.design.print) !== printMode || Boolean(saved.design.video) !== videoMode) throw new Error('Selecione um projeto deste editor.')
+    if (!matchesEditor(saved.design, { printMode, videoMode, storyMode, menuMode, labelsMode, tvMode })) throw new Error('Selecione um projeto deste editor.')
     resetFlyer(reopenFlyer(saved))
     setCurrentId(saved.id)
     setOpenProduct(null)
     setMessage('Projeto carregado.')
   }
 
-  async function download(format: 'png' | 'pdf' | 'zip', page?: number) {
+  async function deleteProject() {
+    if (!accessToken || !currentId || !window.confirm(`Excluir o projeto “${flyer.name}”?`)) return
+    await apiRequest(`flyers/${currentId}/`, { accessToken, method: 'DELETE' })
+    setProjects(current => current.filter(project => project.id !== currentId))
+    clearProject()
+    setMessage('Projeto excluído.')
+  }
+
+  function clearProject() {
+    resetFlyer(newProject())
+    setCurrentId(null)
+    setSelectedProject('')
+    setOpenProduct(null)
+    setMessage('')
+    setError('')
+  }
+
+  async function download(format: 'png' | 'pdf' | 'zip' | 'jpeg', page?: number) {
     if (!pages.length) return
     if (!accessToken) return requestLogin()
     const exportedProducts = print ? (page === undefined ? pages.flatMap(sheet => sheet.products) : pages[page].products) : []
@@ -289,7 +328,7 @@ export function FlyerPageEditor({ printMode = false, videoMode = false, initialS
     if (!entry || entry.design !== design || entry.pages !== pages || entry.request !== request) {
       const count = page === undefined ? pages.length : 1
       const operation: CreditOperation = {
-        key: crypto.randomUUID(), kind: print?.kind ?? 'flyer', count,
+        key: crypto.randomUUID(), kind: exportKind, count,
         format: format === 'png' && count > 1 ? 'zip' : format,
         premium: design.template === 'professional',
       }
@@ -333,8 +372,8 @@ export function FlyerPageEditor({ printMode = false, videoMode = false, initialS
     <div className="mx-auto max-w-[1500px] space-y-6">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-black tracking-tight">{videoMode ? 'Criar Vídeo' : printMode ? 'Criar Cartaz' : 'Criar Encarte'}</h1>
-          <p className="mt-1 text-slate-600 dark:text-slate-400">{videoMode ? 'Monte ofertas animadas para a TV da loja.' : printMode ? 'Prepare cartazes e etiquetas de preço para imprimir em tamanho real.' : 'Monte ofertas em páginas A4 para divulgar ou imprimir.'}</p>
+          <h1 className="text-3xl font-black tracking-tight">{editorTitle}</h1>
+          <p className="mt-1 text-slate-600 dark:text-slate-400">{tvMode ? 'Monte playlists de ofertas e atualize os televisores da loja pelo painel.' : menuMode ? 'Monte seu cardápio para imprimir, publicar ou exibir na TV.' : storyMode ? 'Crie ofertas verticais para WhatsApp, Instagram e Facebook.' : labelsMode ? 'Monte folhas A4 com etiquetas de preço personalizadas.' : videoMode ? 'Monte ofertas animadas para a TV da loja.' : printMode ? 'Prepare cartazes e etiquetas de preço para imprimir em tamanho real.' : 'Monte ofertas em páginas A4 para divulgar ou imprimir.'}</p>
           {!videoMode && <p className="mt-1 text-sm">Exportação · {pageCost} {pageCost === 1 ? 'crédito' : 'créditos'} por página. <a href="/plans" className="underline">Ver planos</a></p>}
           {!videoMode && pages.length > 1 && <p className="text-sm">{freeBatchExceeded
             ? 'No Grátis, exporte até 5 páginas por lote ou baixe uma página pela prévia.'
@@ -345,7 +384,7 @@ export function FlyerPageEditor({ printMode = false, videoMode = false, initialS
           <button type="button" className={secondary} disabled={busy || !canRedo} onClick={redo}>Refazer</button>
           {!videoMode && <>
             <button type="button" className={secondary} disabled={busy || !pages.length || freeBatchExceeded} onClick={() => void run(() => download(printMode && !free ? 'zip' : 'png'))}><FileImage size={17} /> {printMode && !free || free && pages.length > 1 ? 'Exportar ZIP de PNGs' : 'Exportar PNG'}</button>
-            {!free && <button type="button" className={secondary} disabled={busy || !pages.length} onClick={() => void run(() => download('pdf'))}><FileText size={17} /> Exportar PDF</button>}
+            {!free && !storyMode && <button type="button" className={secondary} disabled={busy || !pages.length} onClick={() => void run(() => download('pdf'))}><FileText size={17} /> Exportar PDF</button>}
           </>}
           <button type="button" className={primary} disabled={busy} onClick={() => void run(save)}><Save size={17} /> {documentMode ? 'Salvar encarte' : 'Salvar projeto'}</button>
         </div>
@@ -366,14 +405,34 @@ export function FlyerPageEditor({ printMode = false, videoMode = false, initialS
                 </select></Field>
               </div>
               <button type="button" className={secondary} disabled={!selectedProject} onClick={() => void run(openProject)}>Abrir</button>
-              <button type="button" className={secondary} disabled={busy} onClick={() => { resetFlyer(createFlyer(printMode, videoMode)); setCurrentId(null); setSelectedProject(''); setOpenProduct(null); setMessage(''); setError('') }}>Novo</button>
+              <button type="button" className={secondary} disabled={busy} onClick={clearProject}>Novo</button>
+              {currentId && <button type="button" className={secondary} disabled={busy} onClick={() => void run(deleteProject)}>Excluir projeto</button>}
             </div>
             {moreProjects && <button type="button" className={secondary} onClick={() => { setMoreProjects(false); setProjectPage(page => page + 1) }}>Mais projetos</button>}
           </section>
-          {print && <PrintControls settings={print} products={products} error={printError} onChange={editPrint} />}
+          {(menuMode || tvMode) && currentId && accessToken && <ProjectShares key={currentId} projectId={currentId} accessToken={accessToken} kind={tvMode ? 'tv' : 'menu'} />}
+          {tvMode && <details className={panel}>
+            <summary className="cursor-pointer font-bold">Como abrir na Smart TV</summary>
+            <ol className="list-decimal space-y-2 pl-5 text-sm">
+              <li>Adicione ofertas ou imagens à playlist e salve o projeto.</li>
+              <li>Crie um link para a TV e abra esse endereço no navegador do aparelho ou em um computador conectado por HDMI.</li>
+              <li>Selecione “Tela cheia” no player. Ao salvar alterações neste painel, a TV verifica a playlist a cada 30 segundos.</li>
+            </ol>
+          </details>}
+          {print && <PrintControls settings={print} products={products} error={printError} onChange={editPrint} labelsOnly={labelsMode} />}
           {video && <VideoControls settings={video} onChange={changes => editDesign({ video: { ...video, ...changes } })} />}
           <section className={panel}>
             <h2 className="font-bold">Visual e layout</h2>
+            {menuMode && <Field label="Formato do cardápio">
+              <select className={field} value={menu} onChange={event => editDesign({ menu: event.target.value as MenuFormat })}>
+                {MENU_FORMATS.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+              </select>
+            </Field>}
+            {storyMode && <Field label="Canal do story">
+              <select className={field} value={design.story} onChange={event => editDesign({ story: event.target.value as StoryChannel })}>
+                {STORY_CHANNELS.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+              </select>
+            </Field>}
             <Field label="Modelo visual"><select className={field} value={design.template} onChange={event => {
               const template = event.target.value as FlyerDesign['template']
               const { primary, accent, background, font, border, badge } = FLYER_TEMPLATES[template]
@@ -385,14 +444,14 @@ export function FlyerPageEditor({ printMode = false, videoMode = false, initialS
             <Field label="Nome da loja"><input className={field} maxLength={100} value={design.storeName} onChange={event => editDesign({ storeName: event.target.value })} /></Field>
             <Field label={documentMode ? 'Título do encarte' : 'Título do material'}><input className={field} maxLength={100} value={design.title} onChange={event => editDesign({ title: event.target.value })} /></Field>
             <Field label="Subtítulo"><input className={field} maxLength={160} value={design.subtitle} onChange={event => editDesign({ subtitle: event.target.value })} /></Field>
-            {documentMode && <div className="grid grid-cols-2 gap-3">
+            {(documentMode || menuMode) && <div className="grid grid-cols-2 gap-3">
               <Field label="Produtos por página"><select className={field} value={design.layout} onChange={event => editDesign({ layout: Number(event.target.value) as FlyerDesign['layout'] })}>
                 {FLYER_LAYOUTS.map(layout => <option key={layout}>{layout}</option>)}
               </select></Field>
-              <Field label="Disposição"><select className={field} value={design.arrangement} onChange={event => editDesign({ arrangement: event.target.value as FlyerDesign['arrangement'] })}>
+              {documentMode && <Field label="Disposição"><select className={field} value={design.arrangement} onChange={event => editDesign({ arrangement: event.target.value as FlyerDesign['arrangement'] })}>
                 <option value="standard">{flyerGrid(design.layout, 'standard').cols} colunas</option>
                 <option value="wide">{flyerGrid(design.layout, 'wide').cols} colunas</option>
-              </select></Field>
+              </select></Field>}
             </div>}
             <Field label="Fonte"><select className={field} value={design.font} onChange={event => editDesign({ font: event.target.value as FlyerDesign['font'] })}>
               <option value="sans">Arial</option><option value="serif">Georgia</option><option value="mono">Courier New</option>
@@ -429,7 +488,7 @@ export function FlyerPageEditor({ printMode = false, videoMode = false, initialS
                   event.target.value = ''
                   if (file) void run(async () => editDesign({ [key]: await prepareFlyerImage(file, size, limit) }))
                 }} /></Field>
-                {editablePreview && key === 'backgroundImage' && <FlyerBackgroundCarousel onSelect={url => void run(async () => {
+                {(editablePreview || video || print?.kind === 'labels') && key === 'backgroundImage' && <FlyerBackgroundCarousel onSelect={url => void run(async () => {
                   editDesign({ backgroundImage: await loadFlyerBackground(url) })
                 })} />}
                 {design[key] && <button type="button" className="text-sm font-semibold text-indigo-600 dark:text-indigo-300" onClick={() => editDesign({ [key]: '' })}>Remover {label.toLowerCase()}</button>}
@@ -443,7 +502,11 @@ export function FlyerPageEditor({ printMode = false, videoMode = false, initialS
                 </>}
               </div>,
             )}
-            {documentMode && <label className="flex items-center gap-2 text-sm font-medium">
+            {video && design.backgroundImage && <Field label="Intensidade da imagem de fundo">
+              <input className="mt-1 w-full" type="range" min={0} max={100} value={video.backgroundOpacity ?? 20}
+                onChange={event => editDesign({ video: { ...video, backgroundOpacity: event.target.valueAsNumber } })} />
+            </Field>}
+            {(documentMode || menuMode) && <label className="flex items-center gap-2 text-sm font-medium">
               <input type="checkbox" checked={design.grouped} onChange={event => editDesign({ grouped: event.target.checked })} /> Separar páginas por categoria
             </label>}
           </section>
@@ -521,7 +584,8 @@ export function FlyerPageEditor({ printMode = false, videoMode = false, initialS
                       const errorId = `product-${index}-${key}-error`
                       return <div key={key}>
                         <Field label={label}>
-                          <input className={field} maxLength={max} value={key === 'imageUrl' && product.imageUrl.startsWith('data:') ? '' : product[key]}
+                          <input className={field} maxLength={max} list={menuMode && key === 'category' ? 'menu-product-categories' : undefined}
+                            value={key === 'imageUrl' && product.imageUrl.startsWith('data:') ? '' : product[key]}
                             aria-invalid={(documentMode ? invalidPrice : Boolean(fieldError)) || undefined}
                             aria-describedby={fieldError ? errorId : undefined}
                             onChange={event => editProduct(index, { [key]: event.target.value })} />
@@ -531,7 +595,14 @@ export function FlyerPageEditor({ printMode = false, videoMode = false, initialS
                     })}
                     {documentMode && ([product.price, product.originalPrice].some(price => price.trim() && !Number.isFinite(priceNumber(price)))) &&
                       <p className="text-sm text-amber-700 dark:text-amber-300">Use valores como 19,90. Preços promocionais inválidos aparecem como “Preço sob consulta”.</p>}
-                    {documentMode && <label className="flex items-center gap-2 text-sm font-medium">
+                    {menuMode && <>
+                      <datalist id="menu-product-categories">{MENU_CATEGORIES.map(category => <option key={category}>{category}</option>)}</datalist>
+                      <Field label="Descrição do item">
+                        <textarea className={field} maxLength={280} value={product.description ?? ''}
+                          onChange={event => editProduct(index, { description: event.target.value })} />
+                      </Field>
+                    </>}
+                    {(documentMode || menuMode) && <label className="flex items-center gap-2 text-sm font-medium">
                       <input type="checkbox" checked={Boolean(product.featured)} onChange={event => {
                         const featured = event.target.checked
                         setFlyer(current => ({
@@ -541,7 +612,24 @@ export function FlyerPageEditor({ printMode = false, videoMode = false, initialS
                         }))
                       }} /> Marcar como oferta principal
                     </label>}
-                    {editablePreview && <>
+                    {print?.kind === 'labels' && <>
+                      <Field label="Unidade de venda">
+                        <select className={field} value={product.saleUnit ?? ''} aria-invalid={Boolean(fieldErrors?.saleUnit)}
+                          onChange={event => editProduct(index, { saleUnit: event.target.value })}>
+                          <option value="">Sem indicação</option><option value="un">Unidade</option><option value="kg">Quilo</option><option value="l">Litro</option>
+                          {fieldErrors?.saleUnit && <option value={product.saleUnit}>{product.saleUnit}</option>}
+                        </select>
+                      </Field>
+                      {(['barcode', 'qrUrl'] as const).map(key => <div key={key}>
+                        <Field label={key === 'barcode' ? 'Código de barras EAN-13' : 'Endereço do QR Code'}>
+                          <input className={field} value={product[key] ?? ''} maxLength={key === 'barcode' ? 13 : 180}
+                            inputMode={key === 'barcode' ? 'numeric' : 'url'} aria-invalid={Boolean(fieldErrors?.[key])}
+                            onChange={event => editProduct(index, { [key]: event.target.value.trim() })} />
+                        </Field>
+                        {fieldErrors?.[key] && <p className="text-sm text-red-600">{fieldErrors[key]}</p>}
+                      </div>)}
+                    </>}
+                    {(editablePreview || video || print?.kind === 'labels') && <>
                       <Field label="Etiqueta promocional">
                         <select className={field} value={product.offerLabel ?? 'OFERTA'} onChange={event => editProduct(index, {
                           offerLabel: event.target.value as FlyerProduct['offerLabel'],
@@ -632,6 +720,15 @@ export function FlyerPageEditor({ printMode = false, videoMode = false, initialS
                           duration: event.target.value === '' ? undefined : event.target.valueAsNumber,
                         })} />
                     </Field>}
+                    {tvMode && <Field label="Enviar banner para tela inteira">
+                      <input className={field} type="file" accept={imageTypes} onChange={event => {
+                        const file = event.target.files?.[0]
+                        event.target.value = ''
+                        if (file) void run(async () => editProduct(index, { slideImageUrl: await prepareFlyerImage(file, 1440, 132000) }))
+                      }} />
+                    </Field>}
+                    {tvMode && product.slideImageUrl && <button type="button" className={secondary}
+                      onClick={() => editProduct(index, { slideImageUrl: '' })}>Remover banner de tela inteira</button>}
                     <Field label="Enviar foto do produto"><input className={field} type="file" accept={imageTypes} onChange={event => {
                       const file = event.target.files?.[0]
                       event.target.value = ''
@@ -653,11 +750,11 @@ export function FlyerPageEditor({ printMode = false, videoMode = false, initialS
             </div>
           </section>
         </fieldset>
-        {video ? <VideoPreview products={products} design={design} settings={video} name={flyer.name} invalid={invalidVideo} busy={busy} /> :
-        <section aria-label={printMode ? 'Prévias de impressão' : 'Prévias do encarte'} className={`min-w-0 rounded-2xl bg-slate-200/70 p-4 dark:bg-slate-900 sm:p-6 ${editablePreview ? 'xl:sticky xl:top-24 xl:max-h-[calc(100dvh-7rem)] xl:overflow-y-auto' : ''}`}>
+        {video ? <VideoPreview products={products} design={design} settings={video} name={flyer.name} invalid={invalidVideo} busy={busy} playbackOnly={tvMode} /> :
+        <section aria-label={printMode ? 'Prévias de impressão' : 'Prévias do encarte'} className="min-w-0 rounded-2xl bg-slate-200/70 p-4 dark:bg-slate-900 sm:p-6 xl:sticky xl:top-24 xl:max-h-[calc(100dvh-7rem)] xl:overflow-y-auto">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-            <h2 className="font-bold">{printMode ? 'Prévia de impressão' : 'Prévia do encarte'}</h2>
-            <span className="text-sm text-slate-600 dark:text-slate-400">{pages.length} {pages.length === 1 ? 'página' : 'páginas'} · {print?.kind === 'poster' ? print.paper : 'A4'}{print && ` · ${paper.width} × ${paper.height} mm`}</span>
+            <h2 className="font-bold">{menuMode ? 'Prévia do cardápio' : storyMode ? 'Prévia dos stories' : printMode ? 'Prévia de impressão' : 'Prévia do encarte'}</h2>
+            <span className="text-sm text-slate-600 dark:text-slate-400">{pages.length} {pages.length === 1 ? 'página' : 'páginas'} · {storyMode ? '1080 × 1920 px' : menuSize && menu !== 'a4' ? `${menuSize.width} × ${menuSize.height} px` : print?.kind === 'poster' ? print.paper : 'A4'}{print && ` · ${paper.width} × ${paper.height} mm`}</span>
           </div>
           {print && <p className="mb-4 text-sm text-slate-600 dark:text-slate-400">Para manter as medidas, imprima o PDF em tamanho real (100%).</p>}
           {print?.mode === 'single' && products.length > 1 && <p className="mb-4 text-sm text-slate-600 dark:text-slate-400">
@@ -720,6 +817,8 @@ export function FlyerPageEditor({ printMode = false, videoMode = false, initialS
                 }, group)
               } : undefined}
               onExport={pages.length ? () => void run(() => download('png', index)) : undefined} />
+              {(storyMode || menuMode) && !free && pages.length > 0 && <button type="button" className={secondary} disabled={busy}
+                onClick={() => void run(() => download('jpeg', index))}>Baixar JPG</button>}
             </div>)}
           </div>
         </section>}

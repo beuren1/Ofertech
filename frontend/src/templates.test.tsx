@@ -11,6 +11,7 @@ it('shows the five original artwork examples in Banners only', () => {
   const examples = screen.getByRole('region', { name: 'Exemplos de banners' })
   expect(within(examples).getAllByRole('img')).toHaveLength(5)
   expect(within(examples).getByRole('img', { name: /TechMax/ }).getAttribute('src')).toBe('/banner-examples/techmax.png')
+  expect(within(examples).getByRole('link', { name: /Abrir editor.*TechMax/ }).getAttribute('href')).toBe('/generator?template=upgrade-gamer')
   fireEvent.click(screen.getByRole('button', { name: 'Vídeos' }))
   expect(screen.queryByRole('region', { name: 'Exemplos de banners' })).toBeNull()
 })
@@ -21,7 +22,8 @@ it('shows the five original bulk artwork examples under Criação em massa', () 
   const examples = screen.getByRole('region', { name: 'Exemplos de criação em massa' })
   expect(within(examples).getAllByRole('img')).toHaveLength(5)
   fireEvent.click(screen.getByRole('button', { name: 'Moda' }))
-  expect(within(examples).getByRole('link').getAttribute('href')).toBe('/bulk-examples/03_moda_criacao_em_massa.png')
+  expect(within(examples).getByRole('link', { name: /Ampliar/ }).getAttribute('href')).toBe('/bulk-examples/03_moda_criacao_em_massa.png')
+  expect(within(examples).getByRole('link', { name: /Abrir editor/ }).getAttribute('href')).toBe('/bulk')
 })
 
 it('shows the five original flyer images under Encartes and filters by segment', () => {
@@ -32,7 +34,8 @@ it('shows the five original flyer images under Encartes and filters by segment',
   expect(screen.queryByRole('region', { name: 'Exemplos de banners' })).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: 'Farmácia' }))
   expect(within(examples).getAllByRole('img')).toHaveLength(1)
-  expect(within(examples).getByRole('link').getAttribute('href')).toBe('/flyer-examples/04_encarte_farmacia.png')
+  expect(within(examples).getByRole('link', { name: /Ampliar/ }).getAttribute('href')).toBe('/flyer-examples/04_encarte_farmacia.png')
+  expect(within(examples).getByRole('link', { name: /Abrir editor/ }).getAttribute('href')).toBe('/flyers?template=05_farmacia_verde')
 })
 
 it('shows the five original poster images under Cartazes', () => {
@@ -41,7 +44,8 @@ it('shows the five original poster images under Cartazes', () => {
   const examples = screen.getByRole('region', { name: 'Exemplos de cartazes' })
   expect(within(examples).getAllByRole('img')).toHaveLength(5)
   fireEvent.click(screen.getByRole('button', { name: 'Farmácia' }))
-  expect(within(examples).getByRole('link').getAttribute('href')).toBe('/poster-examples/02_cartaz_farmacia.png')
+  expect(within(examples).getByRole('link', { name: /Ampliar/ }).getAttribute('href')).toBe('/poster-examples/02_cartaz_farmacia.png')
+  expect(within(examples).getByRole('link', { name: /Abrir editor/ }).getAttribute('href')).toBe('/print')
 })
 
 it('shows three editable examples in each of the five formats', () => {

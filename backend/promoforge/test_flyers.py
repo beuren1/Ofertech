@@ -123,9 +123,111 @@ class FlyerProjectTests(APITestCase):
         self.assertEqual(self.client.get('/api/flyers/?kind=print').data['count'], 0)
         self.assertEqual(self.client.get(url).status_code, 404)
 
+    def test_label_codes_and_owner_only_deletion(self):
+        self.client.force_authenticate(self.owner)
+        self.payload['design']['print'] = {
+            'kind': 'labels', 'paper': 'A4', 'mode': 'single', 'margin': 8,
+            'labelWidth': 65, 'labelHeight': 40, 'copies': 1, 'selectedProduct': 0,
+            'photoPosition': 'top', 'textAlign': 'center',
+        }
+        product = self.payload['products'][0]
+        product.update(saleUnit='kg', barcode='0123456789013', qrUrl='https://example.com/cafe')
+        self.assertEqual(self.client.post('/api/flyers/', self.payload, format='json').status_code, 400)
+        product['barcode'] = '0123456789012'
+        response = self.client.post('/api/flyers/', self.payload, format='json')
+        self.assertEqual(response.status_code, 201, response.data)
+        url = f"/api/flyers/{response.data['id']}/"
+        self.assertEqual(self.client.get(url).data['products'], [product])
+        self.assertEqual(self.client.get('/api/flyers/?kind=labels').data['count'], 1)
+        self.client.force_authenticate(self.other)
+        self.assertEqual(self.client.delete(url).status_code, 404)
+        self.client.force_authenticate(self.owner)
+        self.assertEqual(self.client.delete(url).status_code, 204)
+
+    def test_story_project_stays_in_its_editor(self):
+        self.client.force_authenticate(self.owner)
+        self.payload['design']['story'] = 'instagram'
+        response = self.client.post('/api/flyers/', self.payload, format='json')
+        self.assertEqual(response.status_code, 201, response.data)
+        url = f"/api/flyers/{response.data['id']}/"
+        self.assertEqual(self.client.get(url).data['design']['story'], 'instagram')
+        self.assertEqual(self.client.get('/api/flyers/?kind=story').data['count'], 1)
+        self.assertEqual(self.client.get('/api/flyers/').data['count'], 0)
+        self.client.force_authenticate(self.other)
+        self.assertEqual(self.client.get(url).status_code, 404)
+
+    def test_published_menu_is_read_only_current_and_revocable(self):
+        self.client.force_authenticate(self.owner)
+        self.payload['design']['menu'] = 'mobile'
+        self.payload['products'][0]['description'] = 'Café coado na hora'
+        created = self.client.post('/api/flyers/', self.payload, format='json')
+        self.assertEqual(created.status_code, 201, created.data)
+        editor_url = f"/api/flyers/{created.data['id']}/"
+        shares = f'{editor_url}shares/'
+        published = self.client.post(shares, {'label': 'Cardápio digital'}, format='json')
+        self.assertEqual(published.status_code, 201, published.data)
+        public_url = f"/api/public/projects/{published.data['token']}/"
+        revoke_url = f"{shares}{published.data['id']}/"
+
+        self.client.force_authenticate(None)
+        public = self.client.get(public_url)
+        self.assertEqual(public.status_code, 200)
+        self.assertEqual(set(public.data), {'kind', 'name', 'revision', 'design', 'products'})
+        self.assertEqual(public.data['products'][0]['description'], 'Café coado na hora')
+        self.assertEqual(public['Cache-Control'], 'no-store')
+        self.assertEqual(self.client.put(public_url, self.payload, format='json').status_code, 405)
+        self.assertEqual(self.client.get(shares).status_code, 401)
+
+        self.client.force_authenticate(self.other)
+        self.assertEqual(self.client.post(shares, {'label': 'Outro'}, format='json').status_code, 404)
+        self.assertEqual(self.client.delete(revoke_url).status_code, 404)
+        self.client.force_authenticate(self.owner)
+        self.payload['products'][0]['price'] = '16,90'
+        self.assertEqual(self.client.put(editor_url, self.payload, format='json').status_code, 200)
+        self.assertEqual(self.client.get(public_url).data['products'][0]['price'], '16,90')
+        self.assertEqual(self.client.delete(revoke_url).status_code, 204)
+        self.assertEqual(self.client.get(public_url).status_code, 404)
+
+    def test_tv_links_are_independent_and_skip_unchanged_playlists(self):
+        self.client.force_authenticate(self.owner)
+        self.payload['design'].update(tv=True, video={'orientation': 'horizontal', 'transition': 'slide', 'duration': 5})
+        self.payload['products'][0].update(duration=7, slideImageUrl='https://example.com/banner.png')
+        created = self.client.post('/api/flyers/', self.payload, format='json')
+        self.assertEqual(created.status_code, 201, created.data)
+        editor_url = f"/api/flyers/{created.data['id']}/"
+        shares = f'{editor_url}shares/'
+        first = self.client.post(shares, {'label': 'TV do caixa'}, format='json').data
+        second = self.client.post(shares, {'label': 'TV da vitrine'}, format='json').data
+        self.assertNotEqual(first['token'], second['token'])
+        self.assertEqual(self.client.get('/api/flyers/?kind=tv').data['count'], 1)
+        self.assertEqual(self.client.get('/api/flyers/?kind=video').data['count'], 0)
+        url = f"/api/public/projects/{first['token']}/"
+        second_url = f"/api/public/projects/{second['token']}/"
+        self.client.force_authenticate(None)
+        response = self.client.get(url)
+        self.assertEqual(response.data['kind'], 'tv')
+        self.assertEqual(response.data['products'][0]['duration'], 7)
+        self.assertEqual(response.data['products'][0]['slideImageUrl'], 'https://example.com/banner.png')
+        revision = response.data['revision']
+        self.assertEqual(self.client.get(url, {'revision': revision}).status_code, 204)
+        self.client.force_authenticate(self.other)
+        self.assertEqual(self.client.get(shares).status_code, 404)
+        self.assertEqual(self.client.delete(f"{shares}{first['id']}/").status_code, 404)
+        self.client.force_authenticate(self.owner)
+        self.payload['products'][0]['name'] = 'Oferta atualizada'
+        self.assertEqual(self.client.put(editor_url, self.payload, format='json').status_code, 200)
+        self.assertEqual(self.client.get(url, {'revision': revision}).data['products'][0]['name'], 'Oferta atualizada')
+        self.assertEqual(self.client.delete(f"{shares}{first['id']}/").status_code, 204)
+        self.assertEqual(self.client.get(url).status_code, 404)
+        self.assertEqual(self.client.get(second_url).status_code, 200)
+
     def test_video_project_round_trip_duration_and_visibility(self):
         self.client.force_authenticate(self.owner)
-        self.payload['design']['video'] = {'orientation': 'vertical', 'transition': 'zoom', 'duration': 6}
+        self.payload['design']['video'] = {
+            'orientation': 'vertical', 'transition': 'zoom', 'duration': 6,
+            'footerText': 'Consulte as ofertas na loja', 'footerColor': '#103b32',
+            'footerTextColor': '#f2faf4', 'backgroundOpacity': 70,
+        }
         self.payload['products'][0]['duration'] = 3
         created = self.client.post('/api/flyers/', self.payload, format='json')
         self.assertEqual(created.status_code, 201, created.data)

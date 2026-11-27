@@ -18,7 +18,7 @@ export type AuthUser = {
   }
 }
 
-class ApiError extends Error {
+export class ApiError extends Error {
   constructor(message: string, readonly status: number) {
     super(message)
   }
@@ -59,11 +59,12 @@ async function fetchApi(path: string, init: RequestInit): Promise<Response> {
 
 export async function apiRequest<T>(
   path: string,
-  options: { method?: string; body?: unknown; accessToken?: string } = {},
+  options: { method?: string; body?: unknown; accessToken?: string; signal?: AbortSignal } = {},
 ): Promise<T> {
   const isUpload = options.body instanceof FormData
   const response = await fetchApi(path, {
     method: options.method ?? 'GET',
+    ...(options.signal ? { signal: options.signal } : {}),
     credentials: 'include',
     headers: {
       ...(options.body === undefined || isUpload ? {} : { 'Content-Type': 'application/json' }),

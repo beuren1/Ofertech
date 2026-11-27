@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties, type PointerEvent } fr
 import { Lock, Trash2, Unlock } from 'lucide-react'
 import { dragFlyerPhoto, type FlyerDesignLayer, type FlyerLayer, type FlyerPhotoBounds, type PhotoAdjustment } from '../flyerOfferLayout'
 import { flyerCanvasSize, renderFlyerPage, type FlyerDesign, type FlyerPage, type FlyerProduct } from '../flyers'
+import { STORY_HEIGHT, STORY_SAFE, STORY_WIDTH } from '../storyLayout'
 
 const previewScale = 0.5
 const secondary = 'inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold disabled:opacity-50 dark:border-slate-700'
@@ -204,10 +205,14 @@ export function FlyerPreview({ page, design, index, total, onExport, onMoveLayer
         className={`mx-auto block h-auto w-full bg-white shadow-md [grid-area:1/1] ${design.print?.kind === 'poster' ? '' : 'rounded-lg'} ${onMoveLayer ? 'max-w-none touch-none xl:max-w-[var(--preview-max-width)]' : ''}`}
         onPointerDown={startDrag} onPointerMove={moveDrag}
         onPointerUp={endDrag} onPointerCancel={endDrag} onLostPointerCapture={endDrag} />
-        {onMoveLayer && (box || guides.x !== undefined || guides.y !== undefined) && <div aria-hidden="true" style={previewStyle}
+        {onMoveLayer && (box || design.story && showGuides || guides.x !== undefined || guides.y !== undefined) && <div aria-hidden="true" style={previewStyle}
           className="pointer-events-none relative mx-auto max-w-none overflow-hidden [grid-area:1/1] xl:max-w-[var(--preview-max-width)]">
           {box && <span className="absolute border-2 border-dashed border-indigo-500" style={{
             left: `${100 * box.x / size.width}%`, top: `${100 * box.y / size.height}%`, width: `${100 * box.width / size.width}%`, height: `${100 * box.height / size.height}%`,
+          }} />}
+          {design.story && showGuides && <span className="absolute border-2 border-dashed border-cyan-400" style={{
+            left: `${100 * STORY_SAFE.x / STORY_WIDTH}%`, top: `${100 * STORY_SAFE.y / STORY_HEIGHT}%`,
+            width: `${100 * STORY_SAFE.width / STORY_WIDTH}%`, height: `${100 * STORY_SAFE.height / STORY_HEIGHT}%`,
           }} />}
           {showGuides && guides.x !== undefined && <span className="absolute inset-y-0 border-l-2 border-cyan-500" style={{ left: `${100 * guides.x / size.width}%` }} />}
           {showGuides && guides.y !== undefined && <span className="absolute inset-x-0 border-t-2 border-cyan-500" style={{ top: `${100 * guides.y / size.height}%` }} />}

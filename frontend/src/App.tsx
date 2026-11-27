@@ -16,6 +16,8 @@ import { PageMetadata } from './components/PageMetadata'
 const GeneratorPage = lazy(() => import('./pages/Generator').then(module => ({ default: module.GeneratorPage })))
 const BulkPage = lazy(() => import('./pages/Bulk').then(module => ({ default: module.BulkPage })))
 const FlyerPageEditor = lazy(() => import('./pages/Flyer').then(module => ({ default: module.FlyerPageEditor })))
+const PublicMenuPage = lazy(() => import('./pages/PublicMenu').then(module => ({ default: module.PublicMenuPage })))
+const TvPlayerPage = lazy(() => import('./pages/TvPlayer').then(module => ({ default: module.TvPlayerPage })))
 const CommercialDashboard = lazy(() => import('./pages/CommercialDashboard').then(module => ({ default: module.CommercialDashboard })))
 const ForgotPasswordPage = lazy(() => import('./pages/PasswordReset').then(module => ({ default: module.ForgotPasswordPage })))
 const ResetPasswordPage = lazy(() => import('./pages/PasswordReset').then(module => ({ default: module.ResetPasswordPage })))
@@ -71,7 +73,13 @@ export default function App() {
             <Route path="/bulk" element={withLayout(<BulkPage initialSearch={search} />)} />
             <Route path="/flyers" element={withLayout(<FlyerPageEditor key={`flyers${search}`} initialSearch={search} />)} />
             <Route path="/print" element={withLayout(<FlyerPageEditor key={`print${search}`} initialSearch={search} printMode />)} />
+            <Route path="/labels" element={withLayout(<FlyerPageEditor key={`labels${search}`} initialSearch={search} printMode labelsMode />)} />
+            <Route path="/stories" element={withLayout(<FlyerPageEditor key={`stories${search}`} initialSearch={search} storyMode />)} />
+            <Route path="/menus" element={withLayout(<FlyerPageEditor key={`menus${search}`} initialSearch={search} menuMode />)} />
+            <Route path="/cardapio/:token" element={<Suspense fallback={<LoadingPage />}><PublicMenuPage /></Suspense>} />
+            <Route path="/tv/player/:token" element={<Suspense fallback={<LoadingPage />}><TvPlayerPage /></Suspense>} />
             <Route path="/videos" element={withLayout(<FlyerPageEditor key={`video${search}`} initialSearch={search} videoMode />)} />
+            <Route path="/tv" element={withLayout(<FlyerPageEditor key={`tv${search}`} initialSearch={search} videoMode tvMode />)} />
             <Route path="/templates" element={withLayout(<TemplatesPage />)} />
             <Route element={<RequireAuth />}>
               <Route path="/admin-dashboard" element={<Suspense fallback={<LoadingPage />}><CommercialDashboard /></Suspense>} />

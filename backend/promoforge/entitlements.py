@@ -7,7 +7,7 @@ PLAN_RULES = {
     'pro': {'stores': 3, 'batch': 50, 'features': FEATURES, 'formats': ('png', 'jpeg', 'pdf', 'zip', 'mp4', 'webm')},
     'business': {'stores': 10, 'batch': 1000, 'features': (*FEATURES, 'custom_templates'), 'formats': ('png', 'jpeg', 'pdf', 'zip', 'mp4', 'webm')},
 }
-COSTS = {'banner': 1, 'flyer': 2, 'poster': 1, 'labels': 1, 'video': 5, 'cutout': 1}
+COSTS = {'banner': 1, 'flyer': 2, 'poster': 1, 'labels': 1, 'video': 5, 'cutout': 1, 'story': 1, 'menu': 2}
 FREE_COSTS = {**COSTS, 'poster': 2, 'labels': 2, 'video': 2}
 
 

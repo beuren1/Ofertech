@@ -89,6 +89,20 @@ class EntitlementsTests(TestCase):
             account.refresh_from_db()
         self.assertEqual(self.client.get('/api/billing/').data['used'], 10)
 
+    def test_story_and_menu_exports_use_the_shared_balance_and_format_permissions(self):
+        self.assertEqual(operation(self.client, 'story', format='jpeg').status_code, 403)
+        self.assertEqual(operation(self.client, 'menu', format='pdf').status_code, 403)
+        account = paid_fixture(self.user, credits=7)
+        jpeg = bytes.fromhex('ffd8ffe0ffd9')
+        story_key = uuid4()
+        self.assertEqual(operation(self.client, 'story', key=story_key, format='jpeg').data, {'credits': 7, 'cost': 1})
+        self.assertEqual(operation(self.client, 'story', key=story_key, format='jpeg', evidence=jpeg[:-2]).status_code, 400)
+        for _ in range(2):
+            self.assertEqual(operation(self.client, 'story', key=story_key, format='jpeg', evidence=jpeg).data, {'credits': 6, 'cost': 1})
+        self.assertEqual(operation(self.client, 'menu', evidence=PNG).data, {'credits': 4, 'cost': 2})
+        account.refresh_from_db()
+        self.assertEqual(account.credits, 4)
+
     def test_plan_store_and_batch_limits_preserve_existing_stores(self):
         endpoint = '/api/stores/'
         self.assertEqual(self.client.post(endpoint, {'name': 'Primeira'}, format='json').status_code, 201)

@@ -109,6 +109,17 @@ class FlyerProject(models.Model):
         ordering = ['-updated_at', '-id']
 
 
+class ProjectShare(models.Model):
+    project = models.ForeignKey(FlyerProject, on_delete=models.CASCADE, related_name='shares')
+    label = models.CharField(max_length=80)
+    token = models.CharField(max_length=43, unique=True, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at', '-pk']
+
+
 class UserActiveDay(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     day = models.DateField(db_index=True)

@@ -231,6 +231,8 @@ class ArtworkCreditsView(APIView):
 OPERATION_FORMATS = {
     'flyer': ('png', 'pdf', 'zip'), 'poster': ('png', 'pdf', 'zip'),
     'labels': ('png', 'pdf', 'zip'), 'video': ('mp4', 'webm'), 'cutout': ('png',),
+    'story': ('png', 'jpeg', 'zip'),
+    'menu': ('png', 'jpeg', 'pdf', 'zip'),
 }
 
 
@@ -244,7 +246,7 @@ class OperationInput(serializers.Serializer):
 
     def validate(self, attrs):
         kind, format, count = (attrs[field] for field in ('kind', 'format', 'count'))
-        if format not in OPERATION_FORMATS[kind] or (format in {'png', 'mp4', 'webm'} and count != 1):
+        if format not in OPERATION_FORMATS[kind] or (format in {'png', 'jpeg', 'mp4', 'webm'} and count != 1):
             raise ValidationError('Formato ou quantidade inválida para este recurso.')
         return attrs
 
@@ -254,10 +256,10 @@ def artifact_digest(upload, format, count):
     if upload.size > max_size:
         raise ValidationError('O arquivo excede o tamanho máximo para confirmar a operação.')
     header = upload.read(16)
-    signatures = {'png': b'\x89PNG\r\n\x1a\n', 'pdf': b'%PDF-', 'zip': b'PK\x03\x04', 'webm': b'\x1a\x45\xdf\xa3'}
+    signatures = {'png': b'\x89PNG\r\n\x1a\n', 'pdf': b'%PDF-', 'zip': b'PK\x03\x04', 'webm': b'\x1a\x45\xdf\xa3', 'jpeg': b'\xff\xd8\xff'}
     if (format == 'mp4' and header[4:8] != b'ftyp') or (format != 'mp4' and not header.startswith(signatures[format])):
         raise ValidationError('O arquivo concluído não corresponde ao formato solicitado.')
-    ending = {'png': ARTWORK_ENDINGS['image/png'], 'pdf': b'%%EOF'}
+    ending = {'png': ARTWORK_ENDINGS['image/png'], 'pdf': b'%%EOF', 'jpeg': ARTWORK_ENDINGS['image/jpeg']}
     if format in ending:
         upload.seek(max(0, upload.size - 32))
         if not upload.read().rstrip().endswith(ending[format]):

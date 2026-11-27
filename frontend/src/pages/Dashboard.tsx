@@ -10,6 +10,9 @@ import type { FlyerSummary } from '../flyers'
 const projectTypes = {
   flyer: { path: '/flyers', label: 'Encarte' },
   print: { path: '/print', label: 'Impressão' },
+  story: { path: '/stories', label: 'Story' },
+  menu: { path: '/menus', label: 'Cardápio' },
+  tv: { path: '/tv', label: 'Playlist da TV' },
   video: { path: '/videos', label: 'Vídeo' },
 }
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import type { FlyerDesign, FlyerProduct } from '../flyers'
 import { getErrorMessage, useAuth } from '../auth'
 import { useCreationLogin } from '../creationLogin'
@@ -29,12 +29,26 @@ export function VideoControls({ settings, onChange }: {
         <input type="number" className={field} min={1} max={60} step={1} value={Number.isFinite(settings.duration) ? settings.duration : ''}
           onChange={event => onChange({ duration: event.target.valueAsNumber })} />
       </label>
+      <label className="block text-sm font-medium">Texto do rodapé
+        <input className={field} maxLength={160} value={settings.footerText ?? ''}
+          onChange={event => onChange({ footerText: event.target.value })} />
+      </label>
+      <div className="flex flex-wrap gap-4">
+        <label className="flex items-center gap-2 text-sm">Cor do rodapé
+          <input type="color" className="h-8 w-12" value={settings.footerColor ?? '#0f172a'}
+            onChange={event => onChange({ footerColor: event.target.value })} />
+        </label>
+        <label className="flex items-center gap-2 text-sm">Cor do texto do rodapé
+          <input type="color" className="h-8 w-12" value={settings.footerTextColor ?? '#ffffff'}
+            onChange={event => onChange({ footerTextColor: event.target.value })} />
+        </label>
+      </div>
     </section>
   )
 }
 
-export function VideoPreview({ products, design, settings, name, invalid, busy }: {
-  products: FlyerProduct[]; design: FlyerDesign; settings: VideoSettings; name: string; invalid: boolean; busy: boolean
+export function VideoPreview({ products, design, settings, name, invalid, busy, playbackOnly = false }: {
+  products: FlyerProduct[]; design: FlyerDesign; settings: VideoSettings; name: string; invalid: boolean; busy: boolean; playbackOnly?: boolean
 }) {
   const { accessToken, user } = useAuth()
   const requestLogin = useCreationLogin()
@@ -47,15 +61,18 @@ export function VideoPreview({ products, design, settings, name, invalid, busy }
   const [playing, setPlaying] = useState(true)
   const [index, setIndex] = useState(0)
   const [expanded, setExpanded] = useState(false)
+  const [zoom, setZoom] = useState(100)
   const [progress, setProgress] = useState<number | null>(null)
   const [error, setError] = useState('')
-  const [format] = useState(videoRecordingFormat)
+  const [format] = useState(() => playbackOnly ? null : videoRecordingFormat())
   const { width, height } = videoSize(settings.orientation)
 
   useEffect(() => {
     let active = true
-    elapsed.current = 0
-    setIndex(0)
+    if (!products.length) {
+      elapsed.current = 0
+      setIndex(0)
+    }
     setPrepared(null)
     setError('')
     if (products.length && !invalid) {
@@ -146,21 +163,40 @@ export function VideoPreview({ products, design, settings, name, invalid, busy }
   }
 
   return (
-    <section aria-label="Prévia do vídeo" className="min-w-0 space-y-4 rounded-2xl bg-slate-200/70 p-4 dark:bg-slate-900 sm:p-6">
-      <p className="text-sm">Exportação de vídeo · {creditCost('video', user?.profile.plan)} créditos. <a href="/plans" className="underline">Ver planos</a></p>
+    <section aria-label="Prévia do vídeo" className="min-w-0 space-y-4 rounded-2xl bg-slate-200/70 p-4 dark:bg-slate-900 sm:p-6 xl:sticky xl:top-24 xl:max-h-[calc(100dvh-7rem)] xl:overflow-y-auto">
+      {!playbackOnly && <p className="text-sm">Exportação de vídeo · {creditCost('video', user?.profile.plan)} créditos. <a href="/plans" className="underline">Ver planos</a></p>}
       <div className="flex flex-wrap justify-between gap-2">
         <h2 className="font-bold">Prévia do vídeo</h2>
         <span className="text-sm text-slate-600 dark:text-slate-400">{width} × {height}{prepared && ` · ${prepared.timeline.duration / 1000} s por ciclo`}</span>
       </div>
+      <label className="flex flex-wrap items-center gap-2 text-sm">Zoom da prévia
+        <input type="range" min={100} max={200} step={25} value={zoom} aria-valuetext={`${zoom}%`}
+          onChange={event => setZoom(event.target.valueAsNumber)} />
+        <span aria-hidden="true">{zoom}%</span>
+      </label>
       <div ref={player} className={expanded
         ? 'fixed inset-0 z-50 grid place-items-center bg-black p-2'
-        : 'relative grid place-items-center overflow-hidden rounded-lg bg-black [&:fullscreen]:w-screen [&:fullscreen]:h-screen [&:fullscreen]:rounded-none'}>
+        : 'relative overflow-auto rounded-lg bg-black [&:fullscreen]:grid [&:fullscreen]:place-items-center [&:fullscreen]:w-screen [&:fullscreen]:h-screen [&:fullscreen]:rounded-none'}>
         {expanded && <button type="button" onClick={() => setExpanded(false)} className="absolute right-4 top-4 z-10 rounded bg-white px-3 py-2 text-sm text-slate-900">Sair da tela cheia</button>}
         <canvas ref={canvas} width={width} height={height} aria-label="Ofertas em reprodução contínua"
-          className="block max-h-[75vh] w-full object-contain [:fullscreen_&]:max-h-screen" />
-        {!prepared && <p className="absolute inset-x-4 text-center text-sm text-white">{invalid ? 'Corrija a duração para visualizar.' : products.length ? 'Preparando prévia…' : 'Adicione produtos para visualizar o vídeo.'}</p>}
+          style={{ '--video-preview-width': `${expanded ? 100 : zoom}%` } as CSSProperties}
+          className={`block w-[var(--video-preview-width)] max-w-none object-contain [:fullscreen_&]:max-h-screen [:fullscreen_&]:w-full ${zoom === 100 || expanded ? 'max-h-[75vh]' : ''}`} />
+        {!prepared && <p className="absolute inset-x-4 top-1/2 -translate-y-1/2 text-center text-sm text-white">{invalid ? 'Corrija a duração para visualizar.' : products.length ? 'Preparando prévia…' : 'Adicione produtos para visualizar o vídeo.'}</p>}
       </div>
-      {prepared && <p className="text-sm">Oferta {index + 1} de {products.length} · Loop contínuo</p>}
+      {prepared && <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm">Oferta {index + 1} de {products.length} · Loop contínuo</p>
+        {products.length > 1 && <label className="min-w-0 text-sm font-medium">Oferta na prévia
+          <select className={field} value={index} disabled={busy || progress !== null} onChange={event => {
+            const next = Number(event.target.value)
+            elapsed.current = prepared.timeline.ends[next - 1] ?? 0
+            setPlaying(false)
+            setIndex(next)
+            prepared.render(elapsed.current)
+          }}>
+            {products.map((product, position) => <option key={position} value={position}>{product.name}</option>)}
+          </select>
+        </label>}
+      </div>}
       {prepared?.missing ? <p className="text-sm text-amber-700 dark:text-amber-300">Algumas imagens estão indisponíveis. Substitua o arquivo ou use uma URL que permita CORS.</p> : null}
       <div className="flex flex-wrap gap-2">
         <button type="button" className={button} disabled={!prepared || progress !== null || busy} onClick={() => setPlaying(value => !value)}>{playing ? 'Pausar' : 'Reproduzir'}</button>
@@ -168,7 +204,7 @@ export function VideoPreview({ products, design, settings, name, invalid, busy }
         {format && <button type="button" className={button} disabled={!prepared || progress !== null || busy} onClick={() => void download()}>Exportar {format.extension.toUpperCase()}</button>}
         {progress !== null && <button type="button" className={button} onClick={() => recording.current?.abort()}>Cancelar gravação</button>}
       </div>
-      {format?.extension !== 'mp4' && <p className="text-sm text-slate-600 dark:text-slate-400">{format
+      {!playbackOnly && format?.extension !== 'mp4' && <p className="text-sm text-slate-600 dark:text-slate-400">{format
         ? 'MP4 (H.264) indisponível neste navegador. Exporte WebM ou use a tela cheia em loop.'
         : 'Exportação de vídeo indisponível neste navegador. Use a tela cheia em loop.'}</p>}
       {progress !== null && <p role="status" className="text-sm">Gravando em tempo real… {Math.floor(progress * 100)}%. Mantenha esta aba visível.</p>}

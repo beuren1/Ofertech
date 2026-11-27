@@ -4,6 +4,8 @@ import { Search } from 'lucide-react'
 import { flyerCategories, flyerTemplateImage, flyerTemplates } from '../flyerTemplates'
 import { galleryModels, modelTypes } from '../galleryModels'
 
+const segments = Array.from(new Set([...flyerCategories, ...galleryModels.map(model => model.segment)]))
+
 const bannerExamples = [
   { file: 'techmax.png', title: 'Promoção imperdível', store: 'TechMax', segment: 'Eletrônicos', width: 1122, height: 1402 },
   { file: 'farmavida.png', title: 'Cuidados em oferta', store: 'Farmavida', segment: 'Farmácia', width: 941, height: 1672 },
@@ -95,28 +97,39 @@ export function TemplatesPage() {
             onClick={() => setFormat(path)} className={filterClass(format === path)}>{label}</button>)}
         </div>
         <div role="group" aria-label="Segmento da loja" className="flex flex-wrap gap-2">
-          {['Todos', ...flyerCategories].map(item => <button key={item} type="button" aria-pressed={category === item}
+          {['Todos', ...segments].map(item => <button key={item} type="button" aria-pressed={category === item}
             onClick={() => setCategory(item)} className={filterClass(category === item)}>{item === 'Todos' ? 'Todos os segmentos' : item}</button>)}
         </div>
       </div>
       <p role="status" className="text-sm text-slate-600 dark:text-slate-400">{total} {total === 1 ? 'modelo encontrado' : 'modelos encontrados'}</p>
       {total === 0 && examples.length === 0 && <button type="button" className="font-semibold text-indigo-700 underline dark:text-indigo-300"
         onClick={() => { setQuery(''); setCategory('Todos'); setFormat('Todos') }}>Limpar filtros</button>}
-      {examples.map(({ folder, label, kind, images }) => <section key={folder} aria-labelledby={folder} className="space-y-4">
+      {examples.map(({ path, folder, label, kind, images }) => <section key={folder} aria-labelledby={folder} className="space-y-4">
         <h2 id={folder} className="text-xl font-bold">{label}</h2>
         <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
           {images.map(({ file, title, store, segment, width, height }) => {
             const source = `${import.meta.env.BASE_URL}${folder}/${file}`
             const description = `${kind}${store ? ` da ${store}` : ''}: ${title}`
-            return <a key={file} href={source} target="_blank" rel="noopener" aria-label={`Ampliar ${description}`}
-              className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm hover:border-indigo-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-indigo-600 dark:border-slate-800 dark:bg-slate-900">
-              <img src={source} alt={description} width={width} height={height} loading="lazy" decoding="async"
-                className="h-72 w-full bg-slate-100 object-contain dark:bg-slate-950 sm:h-80" />
-              <div className="px-5 py-3">
-                <h3 className="font-bold">{title}</h3>
-                <p className="text-sm text-slate-600 dark:text-slate-400">{store || segment}</p>
+            const preset = galleryModels.find(model => model.path === path && model.segment === segment)?.id
+              ?? (path === '/flyers' ? flyerTemplates.find(([, , category]) => category === segment)?.[0] : undefined)
+            const editorUrl = preset ? `${path}?template=${preset}` : path
+            return <article key={file} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+              <a href={source} target="_blank" rel="noopener" aria-label={`Ampliar ${description}`}
+                className="block focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-indigo-600">
+                <img src={source} alt={description} width={width} height={height} loading="lazy" decoding="async"
+                  className="h-72 w-full bg-slate-100 object-contain dark:bg-slate-950 sm:h-80" />
+              </a>
+              <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
+                <div>
+                  <h3 className="font-bold">{title}</h3>
+                  <p className="text-sm text-slate-600 dark:text-slate-400">{store || segment}</p>
+                </div>
+                <Link to={editorUrl} aria-label={`Abrir editor para ${description}`}
+                  className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-700">
+                  Abrir editor
+                </Link>
               </div>
-            </a>
+            </article>
           })}
         </div>
       </section>)}

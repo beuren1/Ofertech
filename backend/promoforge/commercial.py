@@ -18,7 +18,7 @@ from rest_framework.views import APIView
 
 from .billing import billing_account, plan_data
 from .billing_models import CreditMovement, Plan, PlanChange, RecurringInvoice, SubscriptionPayment
-from .models import CreditAdjustment, FlyerProject, PrintExport, UserActiveDay, VideoExport
+from .models import CreditAdjustment, FlyerProject, PrintExport, ProjectShare, UserActiveDay, VideoExport
 
 
 User = get_user_model()
@@ -85,13 +85,19 @@ def commercial_metrics(period):
         'credits_consumed': (CreditMovement.objects.exclude(kind='adjustment').filter(amount__lt=0), 'created_at', -Sum('amount')),
         'registrations': (User.objects.all(), 'date_joined', Count('pk')),
         'banners': (CreditMovement.objects.filter(kind='generation', amount__lt=0), 'created_at', -Sum('amount')),
-        'flyers': (projects.exclude(design__has_any_keys=['print', 'video']), 'created_at', Count('pk')),
+        'flyers': (projects.exclude(design__has_any_keys=['print', 'video', 'story', 'menu']), 'created_at', Count('pk')),
         'posters': (projects.filter(design__print__kind='poster'), 'created_at', Count('pk')),
         'labels': (projects.filter(design__print__kind='labels'), 'created_at', Count('pk')),
         'poster_exports': (PrintExport.objects.filter(kind='poster'), 'created_at', Sum('quantity')),
         'label_exports': (PrintExport.objects.filter(kind='labels'), 'created_at', Sum('quantity')),
-        'video_projects': (projects.filter(design__has_key='video'), 'created_at', Count('pk')),
+        'video_projects': (projects.filter(design__has_key='video').exclude(design__has_key='tv', design__tv=True), 'created_at', Count('pk')),
         'video_exports': (VideoExport.objects.all(), 'created_at', Count('pk')),
+        'story_projects': (projects.filter(design__has_key='story'), 'created_at', Count('pk')),
+        'story_exports': (CreditMovement.objects.filter(kind='story', amount__lt=0), 'created_at', Count('pk')),
+        'menu_projects': (projects.filter(design__has_key='menu'), 'created_at', Count('pk')),
+        'menu_exports': (CreditMovement.objects.filter(kind='menu', amount__lt=0), 'created_at', Count('pk')),
+        'tv_playlists': (projects.filter(design__tv=True), 'created_at', Count('pk')),
+        'tv_links': (ProjectShare.objects.filter(project__design__tv=True), 'created_at', Count('pk')),
     }
     daily = {key: daily_values(source, field, period, count) for key, (source, field, count) in sources.items()}
     activity = UserActiveDay.objects.filter(day__range=(start, end))
@@ -151,8 +157,11 @@ class CommercialReportView(CommercialAPIView):
         writer.writerow([
             'data', 'cadastros', 'usuarios_ativos', 'banners', 'encartes', 'cartazes',
             'projetos_de_etiquetas', 'cartazes_exportados', 'etiquetas_exportadas', 'projetos_de_video', 'videos_exportados', 'creditos_consumidos',
+            'projetos_de_stories', 'exportacoes_de_stories', 'projetos_de_cardapio', 'exportacoes_de_cardapio', 'playlists_de_tv', 'links_de_tv',
         ])
-        columns = ('date', 'registrations', 'active_users', 'banners', 'flyers', 'posters', 'labels', 'poster_exports', 'label_exports', 'video_projects', 'video_exports', 'credits_consumed')
+        columns = ('date', 'registrations', 'active_users', 'banners', 'flyers', 'posters', 'labels', 'poster_exports', 'label_exports',
+                   'video_projects', 'video_exports', 'credits_consumed', 'story_projects', 'story_exports',
+                   'menu_projects', 'menu_exports', 'tv_playlists', 'tv_links')
         for row in metrics['days']:
             writer.writerow(row[column] for column in columns)
         return response

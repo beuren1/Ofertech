@@ -18,6 +18,11 @@ vi.mock('./videoCanvas', () => ({
   recordVideo: vi.fn(),
 }))
 
+vi.mock('./flyers', async importOriginal => ({
+  ...await importOriginal<typeof import('./flyers')>(),
+  prepareFlyerImage: vi.fn(async () => 'data:image/webp;base64,AAAA'),
+}))
+
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
@@ -45,6 +50,16 @@ it('imports, edits, reorders and reopens a video and plays it in loop without MP
 
   render(<FlyerPageEditor videoMode />)
   expect(screen.getByRole('heading', { name: 'Criar Vídeo' })).toBeTruthy()
+  vi.stubGlobal('fetch', vi.fn(async () => new Response('background', { headers: { 'Content-Type': 'image/jpeg' } })))
+  fireEvent.click(screen.getByRole('button', { name: 'Supermercado verde' }))
+  await screen.findByRole('button', { name: 'Remover imagem de fundo' })
+  fireEvent.change(screen.getByLabelText('Intensidade da imagem de fundo'), { target: { value: '70' } })
+  fireEvent.change(screen.getByLabelText('Texto do rodapé'), { target: { value: 'Consulte as ofertas na loja' } })
+  fireEvent.change(screen.getByLabelText('Cor do rodapé'), { target: { value: '#103b32' } })
+  fireEvent.change(screen.getByLabelText('Cor do texto do rodapé'), { target: { value: '#f2faf4' } })
+  const zoom = screen.getByRole('slider', { name: 'Zoom da prévia' })
+  fireEvent.change(zoom, { target: { value: '150' } })
+  expect(zoom.getAttribute('aria-valuetext')).toBe('150%')
   fireEvent.change(screen.getByLabelText('Cor do nome da loja'), { target: { value: '#99ee11' } })
   fireEvent.change(screen.getByLabelText('Cor do subtítulo'), { target: { value: '#8833cc' } })
   fireEvent.change(screen.getByLabelText('Texto da categoria'), { target: { value: '#cccc44' } })
@@ -74,6 +89,10 @@ it('imports, edits, reorders and reopens a video and plays it in loop without MP
   fireEvent.click(screen.getByRole('button', { name: 'Salvar projeto' }))
   await screen.findByText('Projeto salvo.')
   expect(saved.design.video).toMatchObject({ transition: 'zoom', orientation: 'vertical' })
+  expect(saved.design.video).toMatchObject({
+    backgroundOpacity: 70, footerText: 'Consulte as ofertas na loja', footerColor: '#103b32', footerTextColor: '#f2faf4',
+  })
+  expect(saved.design.backgroundImage).toBe('data:image/webp;base64,AAAA')
   expect(saved.design).toMatchObject({ storeNameColor: '#99ee11', subtitleColor: '#8833cc', categoryTextColor: '#cccc44' })
   expect(saved.products[0]).toMatchObject({ name: 'Café', price: '19,90', duration: 2 })
   fireEvent.click(screen.getByRole('button', { name: 'Novo' }))

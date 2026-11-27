@@ -18,6 +18,10 @@ const workspacePages: Record<string, [string, string]> = {
   '/bulk': ['Criação em massa', 'Importe produtos e gere artes para suas campanhas.'],
   '/flyers': ['Criar Encarte', 'Monte encartes com vários produtos e exporte em PDF ou PNG.'],
   '/print': ['Criar Cartaz', 'Crie cartazes e etiquetas de preço para impressão em tamanho real.'],
+  '/labels': ['Criar Etiquetas', 'Monte folhas A4 com etiquetas de preço personalizadas.'],
+  '/stories': ['Criar Stories', 'Crie ofertas verticais de 1080 × 1920 para redes sociais.'],
+  '/menus': ['Criar Cardápio', 'Personalize, exporte e publique seu cardápio.'],
+  '/tv': ['TV de Ofertas', 'Gerencie playlists promocionais para os televisores da loja.'],
   '/videos': ['Criar Vídeo', 'Crie ofertas animadas para reproduzir em loop na TV da sua loja.'],
   '/templates': ['Modelos', 'Explore os modelos disponíveis para suas promoções.'],
   '/history': ['Histórico', 'Consulte suas promoções e campanhas anteriores.'],
@@ -30,14 +34,16 @@ export function PageMetadata() {
   useEffect(() => {
     const path = pathname.replace(/\/+$/, '') || '/'
     const visible = publicPages[path]
-    const workspace = workspacePages[path]
+    const shared = path.startsWith('/tv/player/') || path.startsWith('/cardapio/')
+    const workspace = workspacePages[path] ?? (shared ? [path.startsWith('/tv/') ? 'TV de Ofertas' : 'Cardápio', 'Visualização compartilhada.'] : undefined)
     const [title, description] = visible ?? (workspace
       ? [`${workspace[0]} | ${BRAND}`, workspace[1]]
       : publicPages['/'])
     document.title = title
     const metadata = [
       ['name', 'description', description],
-      ['name', 'robots', visible ? 'index, follow' : 'noindex, follow'],
+      ['name', 'robots', visible ? 'index, follow' : shared ? 'noindex, nofollow' : 'noindex, follow'],
+      ['name', 'referrer', shared ? 'no-referrer' : 'strict-origin-when-cross-origin'],
       ['property', 'og:title', title],
       ['property', 'og:description', description],
     ]

@@ -7,6 +7,11 @@ export const PAPER = {
 export type PaperSize = { width: number; height: number }
 export const PRINT_DPI = 300
 export const LABEL_GAP = 3
+export const LABEL_SIZES = [
+  { name: 'Pequena', labelWidth: 40, labelHeight: 25 },
+  { name: 'Média', labelWidth: 65, labelHeight: 40 },
+  { name: 'Grande', labelWidth: 90, labelHeight: 55 },
+]
 
 export type PrintSettings = {
   kind: 'poster' | 'labels'

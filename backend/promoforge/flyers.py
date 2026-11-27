@@ -6,6 +6,8 @@ from decimal import Decimal
 from urllib.parse import urlsplit
 
 from rest_framework import serializers, viewsets
+from rest_framework.exceptions import ValidationError
+from rest_framework.permissions import IsAuthenticated
 
 from .models import FlyerProject
 from .billing import billing_account
@@ -13,8 +15,8 @@ from .entitlements import require_feature
 
 
 class FlyerImageField(serializers.CharField):
-    def __init__(self, *, max_length):
-        super().__init__(allow_blank=True, max_length=max_length)
+    def __init__(self, *, max_length, required=True):
+        super().__init__(allow_blank=True, max_length=max_length, required=required)
 
     def run_validation(self, data=serializers.empty):
         value = super().run_validation(data)
@@ -72,6 +74,26 @@ class FlyerProductSerializer(serializers.Serializer):
     oldPriceColor = serializers.RegexField(r'^#[0-9a-fA-F]{6}$', required=False)
     textPositions = FlyerTextPositionsSerializer(required=False)
     cardPosition = FlyerTextPositionSerializer(required=False)
+    saleUnit = serializers.ChoiceField(choices=['un', 'kg', 'l'], allow_blank=True, required=False)
+    barcode = serializers.RegexField(r'^[0-9]{13}$', allow_blank=True, required=False)
+    qrUrl = serializers.URLField(max_length=180, allow_blank=True, required=False)
+    description = serializers.CharField(max_length=280, allow_blank=True, required=False)
+    slideImageUrl = FlyerImageField(max_length=132000, required=False)
+
+    def validate_barcode(self, value):
+        if value:
+            total = sum(int(digit) * (3 if index % 2 else 1) for index, digit in enumerate(value[:12]))
+            if (10 - total % 10) % 10 != int(value[12]):
+                raise serializers.ValidationError('Dígito verificador EAN-13 inválido.')
+        return value
+
+    def validate_qrUrl(self, value):
+        if value:
+            url = urlsplit(value)
+            if url.scheme not in ('http', 'https') or url.username or url.password:
+                raise serializers.ValidationError('Use um endereço HTTP ou HTTPS sem credenciais.')
+        return value
+
     lockedLayers = serializers.ListField(
         child=serializers.ChoiceField(choices=['photo', 'name', 'originalPrice', 'offer']),
         max_length=4, required=False,
@@ -136,6 +158,10 @@ class VideoSettingsSerializer(serializers.Serializer):
     orientation = serializers.ChoiceField(choices=['horizontal', 'vertical'])
     transition = serializers.ChoiceField(choices=['fade', 'slide', 'zoom'])
     duration = serializers.IntegerField(min_value=1, max_value=60)
+    footerText = serializers.CharField(max_length=160, allow_blank=True, required=False)
+    footerColor = serializers.RegexField(r'^#[0-9a-fA-F]{6}$', required=False)
+    footerTextColor = serializers.RegexField(r'^#[0-9a-fA-F]{6}$', required=False)
+    backgroundOpacity = serializers.IntegerField(min_value=0, max_value=100, required=False)
 
 
 class FlyerDesignSerializer(serializers.Serializer):
@@ -167,10 +193,15 @@ class FlyerDesignSerializer(serializers.Serializer):
     badge = serializers.ChoiceField(choices=['pill', 'square', 'burst', 'none'], required=False)
     print = PrintSettingsSerializer(required=False)
     video = VideoSettingsSerializer(required=False)
+    story = serializers.ChoiceField(choices=['whatsapp', 'instagram', 'facebook'], required=False)
+    menu = serializers.ChoiceField(choices=['a4', 'mobile', 'tv'], required=False)
+    tv = serializers.BooleanField(required=False)
 
     def validate(self, attrs):
-        if 'print' in attrs and 'video' in attrs:
+        if len({'print', 'video', 'story', 'menu'}.intersection(attrs)) > 1:
             raise serializers.ValidationError('Escolha um único tipo de projeto.')
+        if attrs.get('tv') and 'video' not in attrs:
+            raise serializers.ValidationError('A playlist precisa ter configurações de vídeo.')
         if attrs.get('template') == 'professional' and 'video' in attrs:
             raise serializers.ValidationError('A Oferta Profissional está disponível em encartes e cartazes.')
         return attrs
@@ -185,6 +216,12 @@ class FlyerSummarySerializer(serializers.ModelSerializer):
     kind = serializers.SerializerMethodField()
 
     def get_kind(self, project):
+        if project.design.get('tv'):
+            return 'tv'
+        if 'menu' in project.design:
+            return 'menu'
+        if 'story' in project.design:
+            return 'story'
         if 'video' in project.design:
             return 'video'
         if 'print' in project.design:
@@ -209,7 +246,7 @@ class FlyerProjectSerializer(FlyerSummarySerializer):
         return products
 
     def validate(self, attrs):
-        if not {'print', 'video'}.intersection(attrs['design']):
+        if not {'print', 'video', 'story', 'menu'}.intersection(attrs['design']):
             return attrs
         errors = []
         for product in attrs['products']:
@@ -224,6 +261,8 @@ class FlyerProjectSerializer(FlyerSummarySerializer):
                 invalid['price'] = 'O preço promocional deve ser menor ou igual ao anterior.'
             if product['imageUrl'] and not valid_print_image(product['imageUrl']):
                 invalid['imageUrl'] = 'Informe uma imagem válida ou uma URL sem credenciais.'
+            if product.get('slideImageUrl') and not valid_print_image(product['slideImageUrl']):
+                invalid['slideImageUrl'] = 'Informe uma imagem válida ou uma URL sem credenciais.'
             errors.append(invalid)
         if any(errors):
             raise serializers.ValidationError({'products': errors})
@@ -231,16 +270,23 @@ class FlyerProjectSerializer(FlyerSummarySerializer):
 
 
 class FlyerProjectViewSet(viewsets.ModelViewSet):
-    http_method_names = ['get', 'post', 'put', 'head', 'options']
+    permission_classes = [IsAuthenticated]
+    http_method_names = ['get', 'post', 'put', 'delete', 'head', 'options']
 
     def get_queryset(self):
         queryset = FlyerProject.objects.filter(owner=self.request.user)
         if self.action == 'list':
             kind = self.request.query_params.get('kind')
-            if kind in {'print', 'video'}:
+            if kind == 'labels':
+                return queryset.filter(design__print__kind='labels')
+            if kind == 'tv':
+                return queryset.filter(design__tv=True)
+            if kind == 'video':
+                return queryset.filter(design__has_key='video').exclude(design__has_key='tv', design__tv=True)
+            if kind in {'print', 'story', 'menu'}:
                 return queryset.filter(design__has_key=kind)
             if kind != 'all':
-                queryset = queryset.exclude(design__has_any_keys=['print', 'video'])
+                queryset = queryset.exclude(design__has_any_keys=['print', 'video', 'story', 'menu'])
         return queryset
 
     def get_serializer_class(self):
@@ -251,7 +297,11 @@ class FlyerProjectViewSet(viewsets.ModelViewSet):
         serializer.save(owner=self.request.user)
 
     def perform_update(self, serializer):
-        self.check_design_access(serializer.validated_data['design'])
+        design = serializer.validated_data['design']
+        previous = serializer.instance.design
+        if any(bool(previous.get(key)) != bool(design.get(key)) for key in ('tv', 'menu')):
+            raise ValidationError('Crie um novo projeto para trocar de módulo.')
+        self.check_design_access(design)
         serializer.save()
 
     def check_design_access(self, design):

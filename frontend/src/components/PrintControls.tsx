@@ -1,10 +1,10 @@
-import { PAPER, printGrid, type PrintSettings } from '../printLayout'
+import { LABEL_SIZES, PAPER, printGrid, type PrintSettings } from '../printLayout'
 import type { FlyerProduct } from '../flyers'
 
 const input = 'mt-1 block w-full min-w-0 rounded-lg border border-slate-300 bg-transparent px-3 py-2 dark:border-slate-700 dark:bg-slate-900'
 
-export function PrintControls({ settings, products, error, onChange, allowLabels = true }: {
-  settings: PrintSettings; products: FlyerProduct[]; error: string; onChange: (changes: Partial<PrintSettings>) => void; allowLabels?: boolean
+export function PrintControls({ settings, products, error, onChange, allowLabels = true, labelsOnly = false }: {
+  settings: PrintSettings; products: FlyerProduct[]; error: string; onChange: (changes: Partial<PrintSettings>) => void; allowLabels?: boolean; labelsOnly?: boolean
 }) {
   const labels = settings.kind === 'labels'
   const { cols, rows } = printGrid(settings)
@@ -18,11 +18,11 @@ export function PrintControls({ settings, products, error, onChange, allowLabels
     <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
       <h2 className="font-bold">Formato de impressão</h2>
       <div className="grid gap-3 sm:grid-cols-2">
-        <label className="block text-sm font-medium">Tipo de material
+        {!labelsOnly && <label className="block text-sm font-medium">Tipo de material
           <select className={input} value={settings.kind} onChange={event => onChange({ kind: event.target.value as PrintSettings['kind'] })}>
             <option value="poster">Cartazes</option><option value="labels" disabled={!allowLabels}>Etiquetas de preço{!allowLabels ? ' · Pro' : ''}</option>
           </select>
-        </label>
+        </label>}
         <label className="block text-sm font-medium">Geração
           <select className={input} value={settings.mode} onChange={event => onChange({ mode: event.target.value as PrintSettings['mode'] })}>
             <option value="bulk" disabled={!allowLabels}>Em massa{!allowLabels ? ' · Pro' : ''}</option><option value="single">Individual</option>
@@ -40,6 +40,16 @@ export function PrintControls({ settings, products, error, onChange, allowLabels
           </select>
         </label>}
         {labels ? <>
+          <label className="block text-sm font-medium">Tamanho da etiqueta
+            <select className={input} value={LABEL_SIZES.find(size => size.labelWidth === settings.labelWidth && size.labelHeight === settings.labelHeight)?.name ?? ''}
+              onChange={event => {
+                const size = LABEL_SIZES.find(option => option.name === event.target.value)
+                if (size) onChange({ labelWidth: size.labelWidth, labelHeight: size.labelHeight })
+              }}>
+              <option value="" disabled>Personalizado</option>
+              {LABEL_SIZES.map(size => <option key={size.name} value={size.name}>{size.name} · {size.labelWidth} × {size.labelHeight} mm</option>)}
+            </select>
+          </label>
           {numberField('labelWidth', 'Largura da etiqueta (mm)', 20, 204, 0.1)}
           {numberField('labelHeight', 'Altura da etiqueta (mm)', 15, 291, 0.1)}
           {numberField('copies', 'Cópias por produto', 1, 10)}

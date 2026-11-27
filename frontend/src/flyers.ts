@@ -4,6 +4,9 @@ import { flyerImageLayout, flyerTextBounds, paintFlyerDetails, paintFlyerPhoto, 
 import type { FlyerDesignLayer, FlyerDesignPositions, PlaceFlyerDesignLayer } from './flyerOfferLayout'
 import { DEFAULT_PRINT, LABEL_GAP, paperPixels, PRINT_DPI, printGrid, printPaper, type PrintSettings } from './printLayout'
 import { DEFAULT_VIDEO, type VideoSettings } from './videoTimeline'
+import { drawLabelCodes, ean13Bits, validLabelQr } from './labelCodes'
+import { STORY_HEIGHT, STORY_SAFE, STORY_WIDTH, type StoryChannel } from './storyLayout'
+import { menuCanvasSize, type MenuFormat } from './menuLayout'
 
 export const FLYER_LAYOUTS = [4, 6, 9, 12, 16] as const
 export const FLYER_LIMIT = 100
@@ -46,6 +49,9 @@ export type FlyerDesign = {
   badge: 'pill' | 'square' | 'burst' | 'none'
   print?: PrintSettings
   video?: VideoSettings
+  story?: StoryChannel
+  menu?: MenuFormat
+  tv?: boolean
 }
 
 export type FlyerProduct = Required<Pick<BulkProduct, 'name' | 'category' | 'price' | 'originalPrice' | 'discount' | 'imageUrl'>> & FlyerPhotoSettings & {
@@ -60,26 +66,34 @@ export type FlyerProduct = Required<Pick<BulkProduct, 'name' | 'category' | 'pri
   oldPriceColor?: string
   textPositions?: FlyerTextPositions
   cardPosition?: { x: number; y: number }
+  saleUnit?: string
+  barcode?: string
+  qrUrl?: string
+  description?: string
+  slideImageUrl?: string
   lockedLayers?: FlyerLayer[]
 }
 export type Flyer = { name: string; design: FlyerDesign; products: FlyerProduct[] }
-export type FlyerSummary = { id: number; name: string; updated_at: string; kind?: 'flyer' | 'print' | 'video' }
+export type FlyerSummary = { id: number; name: string; updated_at: string; kind?: 'flyer' | 'print' | 'video' | 'story' | 'menu' | 'tv' }
 type OptionalLegacyDesign = 'storeName' | 'border' | 'badge'
 export type SavedFlyer = Omit<Flyer, 'design'> & FlyerSummary & {
   design: Omit<FlyerDesign, OptionalLegacyDesign> & Partial<Pick<FlyerDesign, OptionalLegacyDesign>>
 }
 export type FlyerPage = { category: string; products: FlyerProduct[] }
 
-export function createFlyer(print = false, video = false): Flyer {
+export function createFlyer(print = false, video = false, labels = false, story = false, menu = false, tv = false): Flyer {
   const { primary, accent, background, font, border, badge } = FLYER_TEMPLATES.grocery
   return {
-    name: video ? 'Novo vídeo para TV' : print ? 'Novo projeto de impressão' : 'Novo encarte',
+    name: tv ? 'Nova playlist' : menu ? 'Novo cardápio' : story ? 'Novos stories' : labels ? 'Novas etiquetas' : video ? 'Novo vídeo para TV' : print ? 'Novo projeto de impressão' : 'Novo encarte',
     design: {
       title: 'Ofertas da semana', subtitle: '', template: 'grocery', layout: 6,
       arrangement: 'standard', grouped: true, primary, accent, background, font,
       logo: '', backgroundImage: '', storeName: '', border, badge,
-      ...(print ? { print: { ...DEFAULT_PRINT }, title: 'Oferta especial', grouped: false } : {}),
+      ...(print ? { print: { ...DEFAULT_PRINT, kind: labels ? 'labels' : 'poster' }, title: 'Oferta especial', grouped: false } : {}),
       ...(video ? { video: { ...DEFAULT_VIDEO }, grouped: false } : {}),
+      ...(story ? { story: 'instagram' as const, grouped: false } : {}),
+      ...(menu ? { menu: 'a4' as const, title: 'Cardápio', grouped: true } : {}),
+      ...(tv ? { tv: true } : {}),
     },
     products: [],
   }
@@ -95,6 +109,10 @@ export function flyerProduct(product: BulkProduct): FlyerProduct {
     name: product.name.slice(0, 180), category: product.category.slice(0, 80),
     price: product.price.slice(0, 36), originalPrice: (product.originalPrice ?? '').slice(0, 36),
     discount: product.discount.slice(0, 36), imageUrl: product.imageUrl,
+    ...(product.saleUnit ? { saleUnit: product.saleUnit } : {}),
+    ...(product.barcode ? { barcode: product.barcode } : {}),
+    ...(product.qrUrl ? { qrUrl: product.qrUrl } : {}),
+    ...(product.description ? { description: product.description } : {}),
   }
 }
 
@@ -133,6 +151,9 @@ export function priceNumber(value: string) {
 
 export function printProductErrors(product: FlyerProduct, forExport = false) {
   const errors: Partial<Record<keyof FlyerProduct, string>> = {}
+  if (product.saleUnit && !['un', 'kg', 'l'].includes(product.saleUnit)) errors.saleUnit = 'Escolha unidade, quilo ou litro.'
+  if (product.barcode && !ean13Bits(product.barcode)) errors.barcode = 'Informe um EAN-13 com 13 dígitos e dígito verificador válido.'
+  if (product.qrUrl && !validLabelQr(product.qrUrl)) errors.qrUrl = 'Informe um endereço HTTP ou HTTPS de até 180 caracteres.'
   const price = priceNumber(product.price)
   const previous = priceNumber(product.originalPrice)
   const validPrice = (value: number) => Number.isSafeInteger(Math.round(value * 100))
@@ -218,7 +239,7 @@ function card(context: CanvasRenderingContext2D, x: number, y: number, w: number
   }
 }
 
-function discountBadge(context: CanvasRenderingContext2D, kind: FlyerDesign['badge'], x: number, y: number, width: number, height: number, color: string) {
+export function discountBadge(context: CanvasRenderingContext2D, kind: FlyerDesign['badge'], x: number, y: number, width: number, height: number, color: string) {
   if (kind !== 'burst') {
     card(context, x, y, width, height, color, kind === 'pill' ? height / 2 : 3)
     return
@@ -336,6 +357,14 @@ export function contrast(hex: string) {
 }
 
 export function flyerCanvasSize(design: FlyerDesign, scale: number) {
+  if (design.menu) {
+    const { width, height } = menuCanvasSize(design.menu)
+    return { width: Math.round(width * scale / FLYER_EXPORT_SCALE), height: Math.round(height * scale / FLYER_EXPORT_SCALE) }
+  }
+  if (design.story) return {
+    width: Math.round(STORY_WIDTH * scale / FLYER_EXPORT_SCALE),
+    height: Math.round(STORY_HEIGHT * scale / FLYER_EXPORT_SCALE),
+  }
   return design.print
     ? paperPixels(printPaper(design.print), PRINT_DPI * scale / FLYER_EXPORT_SCALE)
     : { width: FLYER_WIDTH * scale, height: FLYER_HEIGHT * scale }
@@ -472,13 +501,12 @@ function drawPrintPage(
     const photo = photos[index]?.image
     const photoArea = { x: photoLeft + pad / 2, y: photoTop + pad / 2, width: photoWidth - pad, height: photoHeight - pad }
     const report = poster ? reportLayer(product) : undefined
-    if (photo && poster) {
+    if (photo) {
       const layout = flyerImageLayout(photoArea, details[index].length, product.photoScale)
       const bounds = paintFlyerPhoto(context, photo, layout.main, product)
       report?.(bounds, 'photo')
       paintFlyerDetails(context, details[index], layout.details, design.accent)
-    } else if (photo) drawImage(context, photo, photoArea.x, photoArea.y, photoArea.width, photoArea.height)
-    else {
+    } else {
       card(context, photoLeft, photoTop, photoWidth, photoHeight, '#ffffff', radius)
       context.fillStyle = '#475569'
       font(Math.min(photoHeight * 0.17, photoWidth * 0.14), 500)
@@ -487,7 +515,8 @@ function drawPrintPage(
     const textLeft = settings.photoPosition === 'left' ? photoLeft + photoWidth + pad : pad
     const textWidth = stacked ? width - pad * 2 : width - photoWidth - pad * 3
     const textTop = stacked ? photoTop + photoHeight + pad : headerHeight + pad
-    const textHeight = height - textTop - pad
+    const codeHeight = !poster && (product.barcode || product.qrUrl) ? Math.min(height * 0.26, width * 0.24) : 0
+    const textHeight = height - textTop - pad - codeHeight
     if (poster) {
       const offerHeight = textHeight / (1 - OFFER_CARD.nameStart)
       drawFlyerOffer(context, design, product, textLeft, textTop - offerHeight * OFFER_CARD.nameStart,
@@ -500,28 +529,33 @@ function drawPrintPage(
       font(Math.min(textHeight * 0.15, textWidth * 0.10))
       drawProductName(context, product.name, textX, textTop + textHeight * 0.13, textWidth, textHeight * 0.16)
       if (Number.isFinite(priceNumber(product.originalPrice))) {
-        context.fillStyle = '#475569'
         font(Math.min(textHeight * 0.14, textWidth * 0.088), 500)
         const oldPrice = priceText(product.originalPrice)
         const oldWidth = Math.min(textWidth, context.measureText(oldPrice).width)
+        if (product.oldPriceColor) card(context, centered ? textX - oldWidth / 2 - pad / 2 : textX - pad / 2,
+          textTop + textHeight * 0.37, oldWidth + pad, textHeight * 0.15, product.oldPriceColor, radius)
+        context.fillStyle = product.oldPriceColor ? contrast(product.oldPriceColor) : '#475569'
         fitText(context, oldPrice, textX, textTop + textHeight * 0.49, textWidth)
         context.fillRect(centered ? textX - oldWidth / 2 : textX, textTop + textHeight * 0.445, oldWidth, textHeight * 0.014)
       }
-      context.fillStyle = design.primary
-      const price = priceText(product.price)
+      if (product.offerColor) card(context, textLeft, textTop + textHeight * 0.53, textWidth, textHeight * 0.29, product.offerColor, radius)
+      context.fillStyle = product.offerTextColor ?? (product.offerColor ? contrast(product.offerColor) : design.primary)
+      const price = `${priceText(product.price)}${product.saleUnit ? ` / ${product.saleUnit}` : ''}`
       const priceSize = Math.min(textHeight * 0.32, textWidth * 0.20)
       font(priceSize)
       font(Math.min(priceSize, priceSize * textWidth / context.measureText(price).width))
       fitText(context, price, textX, textTop + textHeight * 0.79, textWidth)
-      const discount = flyerDiscount(product)
+      const discount = flyerDiscount(product) || product.offerLabel
       if (discount && design.badge !== 'none') {
         font(Math.min(textHeight * 0.12, textWidth * 0.08))
         const badgeWidth = Math.min(textWidth, context.measureText(discount).width + pad * 2)
-        card(context, textLeft + (centered ? (textWidth - badgeWidth) / 2 : 0),
-          textTop + textHeight * 0.83, badgeWidth, textHeight * 0.17, design.accent, design.badge === 'pill' ? textHeight * 0.085 : 0)
-        context.fillStyle = contrast(design.accent)
+        const color = product.discountColor ?? design.accent
+        discountBadge(context, design.badge, textLeft + (centered ? (textWidth - badgeWidth) / 2 : 0),
+          textTop + textHeight * 0.83, badgeWidth, textHeight * 0.17, color)
+        context.fillStyle = product.discountTextColor ?? contrast(color)
         fitText(context, discount, textX + (centered ? 0 : pad), textTop + textHeight * 0.955, badgeWidth - pad * 2)
       }
+      if (codeHeight) drawLabelCodes(context, textLeft, height - pad - codeHeight, textWidth, codeHeight, product.barcode, product.qrUrl)
     }
     context.textAlign = 'left'
     if (logo) {
@@ -575,7 +609,7 @@ export async function renderFlyerPage(canvas: HTMLCanvasElement, page: FlyerPage
   const context = canvas.getContext('2d')
   if (!context) throw new Error('O navegador não conseguiu preparar o encarte.')
   const detailResults = await Promise.all(page.products.map(product =>
-    Promise.all((design.print?.kind === 'labels' ? [] : product.detailPhotos ?? []).slice(0, 3).map(loadProductImage))))
+    Promise.all((product.detailPhotos ?? []).slice(0, 3).map(loadProductImage))))
   const details = detailResults.map(items => items.flatMap(item => item.image ? [item.image] : []))
   const imageErrors = [...photos, ...detailResults.flat()].filter(item => item.error).length
   const canvasBounds = ({ safe, image }: FlyerPhotoBounds): FlyerPhotoBounds => {
@@ -597,6 +631,94 @@ export async function renderFlyerPage(canvas: HTMLCanvasElement, page: FlyerPage
     }
   if (design.print) {
     drawPrintPage(context, canvas, page, design, design.print, logo.image, background.image, photos, details, reportLayer, placeDesignLayer)
+    return Number(Boolean(logo.error)) + Number(Boolean(background.error)) + imageErrors
+  }
+  if (design.story) {
+    context.scale(scale / FLYER_EXPORT_SCALE, scale / FLYER_EXPORT_SCALE)
+    context.fillStyle = design.background
+    context.fillRect(0, 0, STORY_WIDTH, STORY_HEIGHT)
+    if (background.image) drawFlyerBackground(context, background.image, STORY_WIDTH, STORY_HEIGHT)
+    const product = page.products[0]
+    if (product) {
+      const { x, y, width, height } = STORY_SAFE
+      drawProfessionalProduct(context, design, product, x, y, width, height, photos[0].image, logo.image,
+        details[0], reportLayer(product), background.image, page.category, placeDesignLayer(1080, height * 1080 / width))
+    }
+    return Number(Boolean(logo.error)) + Number(Boolean(background.error)) + imageErrors
+  }
+  if (design.menu) {
+    const { width, height } = menuCanvasSize(design.menu)
+    context.scale(dimensions.width / width, dimensions.height / height)
+    context.fillStyle = design.background
+    context.fillRect(0, 0, width, height)
+    const place = placeDesignLayer(width, height)
+    if (background.image) drawFlyerBackground(context, background.image, width, height, place, 0.35)
+    const pad = width * 0.045
+    const header = height * 0.18
+    context.fillStyle = design.primary
+    context.fillRect(0, 0, width, header)
+    const headerInk = design.headerTextColor ?? contrast(design.primary)
+    const heading = (layer: 'storeName' | 'subtitle' | 'category', text: string, baseline: number, size: number, ink: string) => {
+      if (!text) return
+      context.fillStyle = ink
+      setFont(size)
+      const textWidth = width * 0.68
+      const rect = place(layer, { x: pad, y: baseline - size, width: Math.min(textWidth, context.measureText(text).width), height: size })
+      fitText(context, text, rect.x, rect.y + size, textWidth)
+    }
+    context.fillStyle = headerInk
+    setFont(header * 0.3, 900)
+    fitText(context, design.title, pad, header * 0.46, width * 0.72)
+    heading('storeName', design.storeName, header * 0.69, header * 0.16, design.storeNameColor ?? headerInk)
+    heading('subtitle', design.subtitle, header * 0.88, header * 0.14, design.subtitleColor ?? headerInk)
+    if (logo.image) {
+      const side = header * 0.65 * (design.logoScale ?? 100) / 100
+      const rect = place('logo', { x: width - pad - side, y: Math.max(0, (header - side) / 2), width: side, height: side })
+      drawImage(context, logo.image, rect.x, rect.y, rect.width, rect.height)
+    }
+    const columns = design.menu === 'tv' ? 2 : 1
+    const rows = Math.ceil(design.layout / columns)
+    const gap = pad * 0.37
+    const itemWidth = (width - pad * 2 - (columns - 1) * gap) / columns
+    const top = header + height * 0.085
+    const itemHeight = (height - top - pad - (rows - 1) * gap) / rows
+    heading('category', page.category, top - gap, height * 0.037, design.categoryTextColor ?? contrast(design.background))
+    page.products.forEach((product, index) => {
+      const x = pad + (index % columns) * (itemWidth + gap)
+      const y = top + Math.floor(index / columns) * (itemHeight + gap)
+      const inset = gap * 0.65
+      const imageWidth = photos[index].image ? Math.min(itemHeight, itemWidth * 0.29) : 0
+      const textX = x + inset + imageWidth
+      const textWidth = itemWidth - inset * 2 - imageWidth
+      card(context, x, y, itemWidth, itemHeight, '#ffffff', design.template === 'fashion' ? 4 : gap,
+        product.featured || design.border !== 'none' ? { color: product.featured ? design.accent : design.primary, width: design.border === 'strong' ? 5 : 2 } : undefined)
+      const image = photos[index].image
+      if (image) {
+        const layout = flyerImageLayout({ x: x + inset / 2, y: y + inset / 2, width: imageWidth - inset / 2, height: itemHeight - inset }, details[index].length, product.photoScale)
+        const bounds = paintFlyerPhoto(context, image, layout.main, product)
+        onLayer?.(product, canvasBounds(bounds), 'photo')
+        paintFlyerDetails(context, details[index], layout.details, design.accent)
+      }
+      const textArea = { x: textX, y: y + inset, width: textWidth, height: itemHeight - inset * 2 }
+      const offerLine = (layer: 'name' | 'offer' | 'originalPrice', value: string, position: number, size: number, ink: string) => {
+        if (!value) return
+        context.fillStyle = ink
+        setFont(size, layer === 'originalPrice' ? 500 : 800)
+        const bounds = flyerTextBounds(textArea, { x: textX, y: y + itemHeight * position, width: Math.min(textWidth, context.measureText(value).width), height: size }, product.textPositions?.[layer])
+        onLayer?.(product, canvasBounds(bounds), layer)
+        fitText(context, value, bounds.image.x, bounds.image.y + size * 0.85, textWidth)
+      }
+      const saleColor = product.offerColor ?? design.primary
+      offerLine('name', product.name, 0.10, itemHeight * 0.25, design.productTextColor ?? '#111827')
+      context.fillStyle = '#475569'
+      setFont(itemHeight * 0.18, 500)
+      fitText(context, product.description ?? '', textX, y + itemHeight * 0.56, textWidth)
+      const previous = Number.isFinite(priceNumber(product.originalPrice)) ? `De ${priceText(product.originalPrice)} · ` : ''
+      const discount = design.badge === 'none' ? '' : flyerDiscount(product)
+      const price = `${previous}${priceText(product.price)}${discount ? ` · ${discount}` : ''}`
+      if (product.offerTextColor) card(context, textX - inset * 0.25, y + itemHeight * 0.62, textWidth, itemHeight * 0.30, saleColor, 4)
+      offerLine('offer', price, 0.65, itemHeight * 0.21, product.offerTextColor ?? saleColor)
+    })
     return Number(Boolean(logo.error)) + Number(Boolean(background.error)) + imageErrors
   }
   context.scale(scale, scale)

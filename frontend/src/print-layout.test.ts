@@ -2,6 +2,23 @@ import { expect, it } from 'vitest'
 import { flyerPdf, pngPrintDensity } from './flyerExport'
 import { DEFAULT_PRINT, LABEL_GAP, PAPER, paperPixels, paginatePrint, printGrid, printPaper, printSettingsError, type PrintSettings } from './printLayout'
 import { createFlyer, flyerCanvasSize, printProductErrors } from './flyers'
+import { parseProductCsv } from './bulk'
+import { ean13Bits } from './labelCodes'
+import { STORY_HEIGHT, STORY_SAFE, STORY_WIDTH } from './storyLayout'
+import { menuCanvasSize } from './menuLayout'
+
+it('uses print dimensions for A4 menus and native dimensions for digital menus', () => {
+  expect(menuCanvasSize('a4')).toEqual({ width: 2480, height: 3508 })
+  expect(menuCanvasSize('mobile')).toEqual({ width: 1080, height: 1920 })
+  expect(menuCanvasSize('tv')).toEqual({ width: 1920, height: 1080 })
+})
+
+it('keeps stories at 1080 × 1920 with an inset safe area', () => {
+  expect(flyerCanvasSize(createFlyer(false, false, false, true).design, 2)).toEqual({ width: 1080, height: 1920 })
+  expect(STORY_SAFE.x * 2 + STORY_SAFE.width).toBe(STORY_WIDTH)
+  expect(STORY_SAFE.y).toBeGreaterThan(0)
+  expect(STORY_SAFE.y + STORY_SAFE.height).toBeLessThan(STORY_HEIGHT)
+})
 
 const formats = (Object.keys(PAPER) as PrintSettings['paper'][]).flatMap(format => (['portrait', 'landscape'] as const).map(orientation => ({ format, orientation })))
 
@@ -74,4 +91,11 @@ it('sets the PNG physical resolution to 300 DPI', async () => {
   expect(view.getUint32(41)).toBe(11811)
   expect(view.getUint32(45)).toBe(11811)
   expect(view.getUint8(49)).toBe(1)
+})
+it('imports label codes and validates the EAN-13 checksum without losing leading zeroes', () => {
+  const [product] = parseProductCsv('produto;preco;unidade;ean13;qrcode\nCafé;20,00;kg;0123456789012;https://example.com/cafe')
+  expect(product).toMatchObject({ saleUnit: 'kg', barcode: '0123456789012', qrUrl: 'https://example.com/cafe' })
+  expect(ean13Bits(product.barcode!)).toHaveLength(95)
+  expect(ean13Bits('0123456789013')).toBeNull()
+  expect(ean13Bits('123')).toBeNull()
 })

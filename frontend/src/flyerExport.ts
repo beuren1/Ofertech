@@ -1,6 +1,7 @@
 import JSZip from 'jszip'
 import { FLYER_EXPORT_SCALE, renderFlyerPage, type FlyerDesign, type FlyerPage } from './flyers'
 import { PAPER, paperPixels, PRINT_DPI, printPaper, type PaperSize } from './printLayout'
+import { menuPaper } from './menuLayout'
 
 export function flyerPdf(images: Uint8Array[], paper: PaperSize = PAPER.A4, pageSizes?: PaperSize[]) {
   const encoder = new TextEncoder()
@@ -90,11 +91,15 @@ async function renderFile(canvas: HTMLCanvasElement, page: FlyerPage, design: Fl
       else reject(new Error('Não foi possível exportar a página.'))
     }, type, 0.96)
   })
-  return design.print && type === 'image/png' ? pngPrintDensity(new Uint8Array(await blob.arrayBuffer())) : blob
+  return (design.print || design.menu === 'a4') && type === 'image/png' ? pngPrintDensity(new Uint8Array(await blob.arrayBuffer())) : blob
 }
 
-export async function exportFlyer(pages: FlyerPage[], design: FlyerDesign, format: 'png' | 'pdf' | 'zip', index?: number) {
+export async function exportFlyer(pages: FlyerPage[], design: FlyerDesign, format: 'png' | 'pdf' | 'zip' | 'jpeg', index?: number) {
   const canvas = document.createElement('canvas')
+  if (format === 'jpeg') {
+    const page = index ?? 0
+    return { blob: await renderFile(canvas, pages[page], design, page, pages.length, 'image/jpeg'), extension: 'jpg' }
+  }
   if (index !== undefined || (format === 'png' && pages.length === 1)) {
     const page = index ?? 0
     return {
@@ -110,6 +115,6 @@ export async function exportFlyer(pages: FlyerPage[], design: FlyerDesign, forma
     else zip.file(`pagina-${String(page + 1).padStart(2, '0')}.png`, await blob.arrayBuffer())
   }
   return format === 'pdf'
-    ? { blob: flyerPdf(images, printPaper(design.print)), extension: 'pdf' }
+    ? { blob: flyerPdf(images, design.menu ? menuPaper(design.menu) : printPaper(design.print)), extension: 'pdf' }
     : { blob: await zip.generateAsync({ type: 'blob' }), extension: 'zip' }
 }

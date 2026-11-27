@@ -44,7 +44,7 @@ export async function confirmArtworks(token: string, key: string, artworks: Blob
   window.dispatchEvent(new Event(CREDIT_BALANCE_CHANGED))
 }
 
-export const CREDIT_COSTS = { banner: 1, flyer: 2, poster: 1, labels: 1, video: 5, cutout: 1 } as const
+export const CREDIT_COSTS = { banner: 1, flyer: 2, poster: 1, labels: 1, video: 5, cutout: 1, story: 1, menu: 2 } as const
 export function creditCost(kind: keyof typeof CREDIT_COSTS, plan?: string) {
   if (plan === 'free' && (kind === 'poster' || kind === 'labels' || kind === 'video')) return 2
   return CREDIT_COSTS[kind]

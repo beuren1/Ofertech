@@ -74,7 +74,12 @@ describe('saved campaigns dashboard', () => {
 
     expect(await screen.findByRole('heading', { name: /Pessoa Autenticada/ })).toBeTruthy()
     await waitFor(() => expect(screen.getByRole('link', { name: /Créditos restantes/ }).textContent).toContain('7'))
-    expect(within(screen.getByRole('navigation', { name: 'Atalhos dos geradores' })).getAllByRole('link')).toHaveLength(5)
+    const shortcuts = within(screen.getByRole('navigation', { name: 'Atalhos dos geradores' }))
+    expect(shortcuts.getAllByRole('link')).toHaveLength(9)
+    expect(shortcuts.getByRole('link', { name: 'Criar Etiquetas' }).getAttribute('href')).toBe('/labels')
+    expect(shortcuts.getByRole('link', { name: 'Criar Stories' }).getAttribute('href')).toBe('/stories')
+    expect(shortcuts.getByRole('link', { name: 'Criar Cardápio' }).getAttribute('href')).toBe('/menus')
+    expect(shortcuts.getByRole('link', { name: 'TV de Ofertas' }).getAttribute('href')).toBe('/tv')
     const saved = within(screen.getByRole('region', { name: 'Minhas campanhas' }))
     expect(await saved.findByText('Campanha de teste')).toBeTruthy()
     const recent = within(screen.getByRole('region', { name: 'Projetos recentes' }))
