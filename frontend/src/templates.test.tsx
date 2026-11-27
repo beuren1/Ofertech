@@ -5,6 +5,45 @@ import { TemplatesPage } from './pages/Templates'
 
 afterEach(cleanup)
 
+it('shows the five original artwork examples in Banners only', () => {
+  render(<MemoryRouter><TemplatesPage /></MemoryRouter>)
+  fireEvent.click(screen.getByRole('button', { name: 'Banners' }))
+  const examples = screen.getByRole('region', { name: 'Exemplos de banners' })
+  expect(within(examples).getAllByRole('img')).toHaveLength(5)
+  expect(within(examples).getByRole('img', { name: /TechMax/ }).getAttribute('src')).toBe('/banner-examples/techmax.png')
+  fireEvent.click(screen.getByRole('button', { name: 'Vídeos' }))
+  expect(screen.queryByRole('region', { name: 'Exemplos de banners' })).toBeNull()
+})
+
+it('shows the five original bulk artwork examples under Criação em massa', () => {
+  render(<MemoryRouter><TemplatesPage /></MemoryRouter>)
+  fireEvent.click(screen.getByRole('button', { name: 'Criação em massa' }))
+  const examples = screen.getByRole('region', { name: 'Exemplos de criação em massa' })
+  expect(within(examples).getAllByRole('img')).toHaveLength(5)
+  fireEvent.click(screen.getByRole('button', { name: 'Moda' }))
+  expect(within(examples).getByRole('link').getAttribute('href')).toBe('/bulk-examples/03_moda_criacao_em_massa.png')
+})
+
+it('shows the five original flyer images under Encartes and filters by segment', () => {
+  render(<MemoryRouter><TemplatesPage /></MemoryRouter>)
+  fireEvent.click(screen.getByRole('button', { name: 'Encartes' }))
+  const examples = screen.getByRole('region', { name: 'Exemplos de encartes' })
+  expect(within(examples).getAllByRole('img')).toHaveLength(5)
+  expect(screen.queryByRole('region', { name: 'Exemplos de banners' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Farmácia' }))
+  expect(within(examples).getAllByRole('img')).toHaveLength(1)
+  expect(within(examples).getByRole('link').getAttribute('href')).toBe('/flyer-examples/04_encarte_farmacia.png')
+})
+
+it('shows the five original poster images under Cartazes', () => {
+  render(<MemoryRouter><TemplatesPage /></MemoryRouter>)
+  fireEvent.click(screen.getByRole('button', { name: 'Cartazes' }))
+  const examples = screen.getByRole('region', { name: 'Exemplos de cartazes' })
+  expect(within(examples).getAllByRole('img')).toHaveLength(5)
+  fireEvent.click(screen.getByRole('button', { name: 'Farmácia' }))
+  expect(within(examples).getByRole('link').getAttribute('href')).toBe('/poster-examples/02_cartaz_farmacia.png')
+})
+
 it('shows three editable examples in each of the five formats', () => {
   render(<MemoryRouter><TemplatesPage /></MemoryRouter>)
   for (const [format, path] of [

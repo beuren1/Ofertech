@@ -4,6 +4,45 @@ import { Search } from 'lucide-react'
 import { flyerCategories, flyerTemplateImage, flyerTemplates } from '../flyerTemplates'
 import { galleryModels, modelTypes } from '../galleryModels'
 
+const bannerExamples = [
+  { file: 'techmax.png', title: 'Promoção imperdível', store: 'TechMax', segment: 'Eletrônicos', width: 1122, height: 1402 },
+  { file: 'farmavida.png', title: 'Cuidados em oferta', store: 'Farmavida', segment: 'Farmácia', width: 941, height: 1672 },
+  { file: 'gamezone.png', title: 'Setup gamer em oferta', store: 'GameZone', segment: 'Eletrônicos', width: 1536, height: 1024 },
+  { file: 'bella-moda.png', title: 'Liquidação Fashion', store: 'Bella Moda', segment: 'Moda', width: 1672, height: 941 },
+  { file: 'supermais.png', title: 'Ofertas da semana', store: 'SuperMais', segment: 'Supermercado', width: 1254, height: 1254 },
+]
+
+const flyerExamples = [
+  { file: '01_encarte_supermercado.png', title: 'Ofertas de supermercado', segment: 'Supermercado', width: 1086, height: 1448 },
+  { file: '02_encarte_gamer.png', title: 'Ofertas gamer', segment: 'Eletrônicos', width: 1086, height: 1448 },
+  { file: '03_encarte_moda.png', title: 'Ofertas de moda', segment: 'Moda', width: 1086, height: 1448 },
+  { file: '04_encarte_farmacia.png', title: 'Ofertas de farmácia', segment: 'Farmácia', width: 1086, height: 1448 },
+  { file: '05_encarte_eletronicos.png', title: 'Ofertas de eletrônicos', segment: 'Eletrônicos', width: 1055, height: 1491 },
+]
+
+const bulkExamples = [
+  ['01_supermercado_criacao_em_massa.png', 'Ofertas de supermercado em lote', 'Supermercado'],
+  ['02_gamer_criacao_em_massa.png', 'Ofertas gamer em lote', 'Eletrônicos'],
+  ['03_moda_criacao_em_massa.png', 'Ofertas de moda em lote', 'Moda'],
+  ['04_eletronicos_criacao_em_massa.png', 'Ofertas de eletrônicos em lote', 'Eletrônicos'],
+  ['05_farmacia_criacao_em_massa.png', 'Ofertas de farmácia em lote', 'Farmácia'],
+].map(([file, title, segment]) => ({ file, title, segment, store: '', width: 1536, height: 1024 }))
+
+const posterExamples = [
+  { file: '01_cartaz_supermercado.png', title: 'Cartaz de supermercado', segment: 'Supermercado', width: 1024, height: 1536 },
+  { file: '02_cartaz_farmacia.png', title: 'Cartaz de farmácia', segment: 'Farmácia', width: 1086, height: 1448 },
+  { file: '03_cartaz_eletronicos.png', title: 'Cartaz de eletrônicos', segment: 'Eletrônicos', width: 1024, height: 1536 },
+  { file: '04_cartaz_moda.png', title: 'Cartaz de moda', segment: 'Moda', width: 1024, height: 1536 },
+  { file: '05_cartaz_gamer.png', title: 'Cartaz gamer', segment: 'Eletrônicos', width: 1024, height: 1536 },
+]
+
+const exampleGroups = [
+  { path: '/generator', folder: 'banner-examples', label: 'Exemplos de banners', kind: 'banner', images: bannerExamples },
+  { path: '/bulk', folder: 'bulk-examples', label: 'Exemplos de criação em massa', kind: 'arte em lote', images: bulkExamples },
+  { path: '/flyers', folder: 'flyer-examples', label: 'Exemplos de encartes', kind: 'encarte', images: flyerExamples.map(example => ({ ...example, store: '' })) },
+  { path: '/print', folder: 'poster-examples', label: 'Exemplos de cartazes', kind: 'cartaz', images: posterExamples.map(example => ({ ...example, store: '' })) },
+]
+
 const groups = [
   ...modelTypes.map(([path, label]) => ({ label, path, models: galleryModels.filter(model => model.path === path).map(model => ({
     ...model, title: model.name,
@@ -26,6 +65,11 @@ export function TemplatesPage() {
   const [category, setCategory] = useState('Todos')
   const [format, setFormat] = useState('Todos')
   const search = normalize(query)
+  const examples = exampleGroups.filter(group => format === 'Todos' || format === group.path).map(group => ({
+    ...group,
+    images: group.images.filter(({ title, store, segment }) => (category === 'Todos' || category === segment)
+      && normalize(`${title} ${store} ${segment}`).includes(search)),
+  })).filter(group => group.images.length)
   const results = groups.filter(group => format === 'Todos' || format === group.path).map(group => ({
     ...group,
     models: group.models.filter(({ name, title, segment, products }) =>
@@ -56,8 +100,26 @@ export function TemplatesPage() {
         </div>
       </div>
       <p role="status" className="text-sm text-slate-600 dark:text-slate-400">{total} {total === 1 ? 'modelo encontrado' : 'modelos encontrados'}</p>
-      {total === 0 && <button type="button" className="font-semibold text-indigo-700 underline dark:text-indigo-300"
+      {total === 0 && examples.length === 0 && <button type="button" className="font-semibold text-indigo-700 underline dark:text-indigo-300"
         onClick={() => { setQuery(''); setCategory('Todos'); setFormat('Todos') }}>Limpar filtros</button>}
+      {examples.map(({ folder, label, kind, images }) => <section key={folder} aria-labelledby={folder} className="space-y-4">
+        <h2 id={folder} className="text-xl font-bold">{label}</h2>
+        <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+          {images.map(({ file, title, store, segment, width, height }) => {
+            const source = `${import.meta.env.BASE_URL}${folder}/${file}`
+            const description = `${kind}${store ? ` da ${store}` : ''}: ${title}`
+            return <a key={file} href={source} target="_blank" rel="noopener" aria-label={`Ampliar ${description}`}
+              className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm hover:border-indigo-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-indigo-600 dark:border-slate-800 dark:bg-slate-900">
+              <img src={source} alt={description} width={width} height={height} loading="lazy" decoding="async"
+                className="h-72 w-full bg-slate-100 object-contain dark:bg-slate-950 sm:h-80" />
+              <div className="px-5 py-3">
+                <h3 className="font-bold">{title}</h3>
+                <p className="text-sm text-slate-600 dark:text-slate-400">{store || segment}</p>
+              </div>
+            </a>
+          })}
+        </div>
+      </section>)}
       {results.map(({ path, label, models }) => (
         <section key={label} className="space-y-4">
           <h2 className="text-xl font-bold">{label}</h2>
