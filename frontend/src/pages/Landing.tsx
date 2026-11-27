@@ -69,7 +69,6 @@ function ShopComments() {
           </button>
         </div>
       </div>
-      <p className="mt-3 text-sm text-slate-600">Nomes e relatos fictícios.</p>
     </section>
   )
 }

@@ -35,7 +35,6 @@ describe('Ofertech', () => {
       expect(screen.getByRole('link', { name }).getAttribute('href')).toBe(path)
     }
     expect(screen.getByRole('heading', { name: 'Comentários de lojistas' })).toBeTruthy()
-    expect(screen.getByText('Nomes e relatos fictícios.')).toBeTruthy()
     const comment = screen.getByRole('button', { name: 'Ver comentário de vitrine flor de linho' })
     fireEvent.click(comment)
     expect(comment.getAttribute('aria-pressed')).toBe('true')
