@@ -58,21 +58,41 @@ def provider_error_type(error):
     return 'upstream_http_error'
 
 
-def configured():
+def configuration_blockers():
+    blockers = []
+    if settings.MP_MODE != 'test':
+        blockers.append('mode_disabled')
+    if not settings.MP_ACCESS_TOKEN:
+        blockers.append('access_token_missing')
+    if not settings.MP_WEBHOOK_SECRET:
+        blockers.append('webhook_secret_missing')
+    if not settings.MP_TEST_SELLER_ID.isdecimal():
+        blockers.append('test_seller_invalid')
+    if not settings.MP_TEST_BUYER_EMAIL.endswith('@testuser.com'):
+        blockers.append('test_buyer_invalid')
     try:
         back_url = urlsplit(settings.MP_BACK_URL)
+        valid_back_url = back_url.scheme == 'https' and back_url.hostname and not back_url.username
     except ValueError:
-        return False
-    return bool(
-        settings.MP_MODE == 'test'
-        and settings.MP_ACCESS_TOKEN
-        and settings.MP_WEBHOOK_SECRET
-        and settings.MP_TEST_SELLER_ID.isdecimal()
-        and settings.MP_TEST_BUYER_EMAIL.endswith('@testuser.com')
-        and back_url.scheme == 'https'
-        and back_url.hostname
-        and not back_url.username
-    )
+        valid_back_url = False
+    if not valid_back_url:
+        blockers.append('return_url_invalid')
+    return blockers
+
+
+def configured():
+    return not configuration_blockers()
+
+
+def matches_test_buyer(user):
+    return user.email.lower() == settings.MP_TEST_BUYER_EMAIL
+
+
+def checkout_blockers(user):
+    blockers = configuration_blockers()
+    if 'test_buyer_invalid' not in blockers and not matches_test_buyer(user):
+        blockers.append('buyer_mismatch')
+    return blockers
 
 
 def request_mp(path, method='GET', body=None, *, identity=False):

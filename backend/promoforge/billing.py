@@ -83,7 +83,7 @@ class BillingView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        from .mercado_pago import configured
+        from .mercado_pago import checkout_blockers
         from .recurring import open_change
 
         with billing_account(request.user) as account:
@@ -104,11 +104,13 @@ class BillingView(APIView):
                     or (paid_until and paid_until <= today)
                 )
             )
+            blockers = checkout_blockers(request.user)
             return Response({
                 'plan': plan_data(account.plan), 'credits': account.credits,
                 'monthly_limit': account.monthly_limit, 'used': used,
                 'period': account.period, 'cancel_at_period_end': account.cancel_at_period_end,
-                'checkout_available': configured() and request.user.email.lower() == settings.MP_TEST_BUYER_EMAIL,
+                'checkout_available': not blockers,
+                'checkout_blockers': blockers,
                 'subscription_plan': change.plan_id if change else None,
                 'subscription_status': change.status if change else None,
                 'payment_status': payment_state,

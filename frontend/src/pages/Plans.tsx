@@ -28,6 +28,15 @@ const paymentLabels: Record<string, string> = {
 }
 
 const checkoutStatusId = 'test-checkout-status'
+const checkoutBlockerMessages: Record<string, string> = {
+  mode_disabled: 'O checkout de teste está desligado no servidor. Em homologação, configure MP_MODE=test.',
+  access_token_missing: 'O token de acesso do Mercado Pago de teste está ausente no servidor.',
+  webhook_secret_missing: 'A chave de assinatura do webhook de teste está ausente no servidor.',
+  test_seller_invalid: 'O identificador da conta vendedora de teste está ausente ou não é numérico.',
+  test_buyer_invalid: 'O endereço da conta compradora de teste está ausente ou usa um domínio diferente de testuser.com.',
+  return_url_invalid: 'O endereço de retorno do checkout de teste deve ser uma URL HTTPS válida, sem credenciais.',
+  buyer_mismatch: 'A conta atual não corresponde à conta compradora configurada para testes. Saia e entre com a conta compradora de teste da Ofertech.',
+}
 const basicBenefits = [
   'Banners, encartes, cartazes, etiquetas, stories, cardápios, vídeos e TV de Ofertas',
   'Remoção de fundo',
@@ -58,6 +67,7 @@ export function PlansPage() {
     ? billing.subscription_plan
     : null
   const checkoutAvailable = Boolean(accessToken && billing?.checkout_available)
+  const checkoutReasons = accessToken ? billing?.checkout_blockers?.flatMap(code => checkoutBlockerMessages[code] ? [checkoutBlockerMessages[code]] : []) ?? [] : []
   const checkoutStatus = !accessToken
     ? 'Entre com a conta compradora de teste para contratar.'
     : billing
@@ -143,7 +153,12 @@ export function PlansPage() {
         </section>
       )}
       {!checkoutAvailable && plans.some(plan => plan.code !== 'free') && (
-        <p id={checkoutStatusId} role="status" className="text-sm text-slate-500">{checkoutStatus}</p>
+        <div id={checkoutStatusId} role="status" className="space-y-1 text-sm text-slate-600 dark:text-slate-400">
+          <p>{checkoutStatus}</p>
+          {checkoutReasons.length > 0 && <ul className="list-disc space-y-1 pl-5">
+            {checkoutReasons.map(reason => <li key={reason}>{reason}</li>)}
+          </ul>}
+        </div>
       )}
       <div className="grid gap-5 lg:grid-cols-3">
         {plans.map(plan => (

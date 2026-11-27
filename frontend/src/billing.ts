@@ -11,6 +11,7 @@ export type Billing = {
   used: number
   period: string
   checkout_available: boolean
+  checkout_blockers?: string[]
   subscription_plan: string | null
   subscription_status: string | null
   payment_status: string | null

@@ -25,11 +25,12 @@ it('shows disabled paid plan buttons when the test checkout is unavailable', asy
     ])
     .mockResolvedValueOnce({
       plan: free, credits: 10, monthly_limit: 10, used: 0, history: [], checkout_available: false,
+      checkout_blockers: ['buyer_mismatch'],
     })
 
   render(<MemoryRouter><PlansPage /></MemoryRouter>)
 
-  const explanation = await screen.findByText(/Checkout de teste indisponível para esta conta/i)
+  const explanation = await screen.findByText(/a conta atual não corresponde à conta compradora/i)
   expect(screen.getByText('Mais popular').closest('article')?.textContent).toContain('Pro')
   expect(screen.getByText('Plano atual')).toBeTruthy()
   expect(screen.getByRole('heading', { name: 'Perguntas sobre planos e créditos' })).toBeTruthy()
@@ -37,7 +38,7 @@ it('shows disabled paid plan buttons when the test checkout is unavailable', asy
   for (const name of ['Assinar Pro em teste', 'Assinar Business em teste']) {
     const button = screen.getByRole<HTMLButtonElement>('button', { name })
     expect(button.disabled).toBe(true)
-    expect(button.getAttribute('aria-describedby')).toBe(explanation.id)
+    expect(button.getAttribute('aria-describedby')).toBe(explanation.closest('[role="status"]')?.id)
     fireEvent.click(button)
   }
   expect(apiRequest).not.toHaveBeenCalledWith('billing/change/', expect.anything())

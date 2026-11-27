@@ -122,6 +122,7 @@ class MercadoPagoTests(TestCase):
     @override_settings(MP_MODE='off')
     def test_checkout_disabled_in_off_mode(self):
         self.assertFalse(self.account()['checkout_available'])
+        self.assertEqual(self.account()['checkout_blockers'], ['mode_disabled'])
         self.assertEqual(self.checkout().status_code, 503)
         self.request.assert_not_called()
 

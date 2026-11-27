@@ -107,13 +107,22 @@ class BillingTests(TestCase):
             MP_BACK_URL='https://test.example.org/plans',
         ), patch('promoforge.mercado_pago.request_mp') as request_mp:
             self.assertFalse(self.account()['checkout_available'])
+            self.assertEqual(self.account()['checkout_blockers'], ['buyer_mismatch'])
             self.assertEqual(self.client.post('/api/billing/change/', {'plan': 'pro'}, format='json').status_code, 403)
             self.user.email = 'buyer@testuser.com'
             self.user.save(update_fields=['email'])
             self.assertTrue(self.account()['checkout_available'])
-            for setting in ('MP_ACCESS_TOKEN', 'MP_WEBHOOK_SECRET', 'MP_BACK_URL'):
+            self.assertEqual(self.account()['checkout_blockers'], [])
+            for setting, blocker in (
+                ('MP_ACCESS_TOKEN', 'access_token_missing'),
+                ('MP_WEBHOOK_SECRET', 'webhook_secret_missing'),
+                ('MP_BACK_URL', 'return_url_invalid'),
+                ('MP_TEST_SELLER_ID', 'test_seller_invalid'),
+                ('MP_TEST_BUYER_EMAIL', 'test_buyer_invalid'),
+            ):
                 with self.subTest(setting=setting), self.settings(**{setting: ''}):
                     self.assertFalse(self.account()['checkout_available'])
+                    self.assertEqual(self.account()['checkout_blockers'], [blocker])
                     response = self.client.post('/api/billing/change/', {'plan': 'pro'}, format='json')
                     self.assertEqual(response.status_code, 503)
             request_mp.assert_not_called()

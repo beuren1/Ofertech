@@ -107,7 +107,7 @@ def find_submitted(change):
 def start_checkout(user, plan):
     if not mp.configured():
         raise mp.MercadoPagoUnavailable()
-    if user.email.lower() != settings.MP_TEST_BUYER_EMAIL:
+    if not mp.matches_test_buyer(user):
         raise PermissionDenied('Entre na Ofertech com o e-mail da conta compradora de teste.')
     mp.verify_test_seller()
     with billing_account(user) as account:
