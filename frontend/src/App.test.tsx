@@ -34,11 +34,11 @@ describe('Ofertech', () => {
     ]) {
       expect(screen.getByRole('link', { name }).getAttribute('href')).toBe(path)
     }
-    expect(screen.getByRole('heading', { name: 'Comentários de lojistas' })).toBeTruthy()
-    const comment = screen.getByRole('button', { name: 'Ver comentário de vitrine flor de linho' })
+    expect(screen.getByRole('heading', { name: 'Exemplos para cada tipo de loja' })).toBeTruthy()
+    const comment = screen.getByRole('button', { name: 'Ver exemplo para lojas de moda' })
     fireEvent.click(comment)
     expect(comment.getAttribute('aria-pressed')).toBe('true')
-    expect(screen.getByRole('figure').textContent).toContain('Vitrine Flor de Linho')
+    expect(screen.getByRole('figure').textContent).toContain('Lojas de moda')
     expect(document.title).toBe('Ofertech | Sua oferta merece destaque.')
     expect(screen.getByRole('contentinfo').textContent).toContain('Ofertech')
   })
@@ -55,6 +55,14 @@ describe('Ofertech', () => {
     render(<MemoryRouter initialEntries={['/login']}><App /></MemoryRouter>)
     expect(screen.getByText(/Bem-vindo de volta/i)).toBeTruthy()
   })
+
+  it('opens the preliminary privacy policy from the public footer', async () => {
+    render(<MemoryRouter initialEntries={['/']}><App /></MemoryRouter>)
+    fireEvent.click(screen.getByRole('link', { name: 'Política de Privacidade' }))
+    expect(await screen.findByRole('heading', { name: 'Política de Privacidade' }, { timeout: 5000 })).toBeTruthy()
+    expect(screen.getByText(/versão preliminar/i)).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Exclusão de conta e dados' }).getAttribute('href')).toBe('/excluir-conta')
+  }, 10000)
 
   it('opens creation for guests and keeps the draft through login', async () => {
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null)

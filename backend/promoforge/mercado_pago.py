@@ -30,10 +30,10 @@ class MercadoPagoError(APIException):
     status_code = 502
     default_detail = 'Não foi possível confirmar a operação com o Mercado Pago.'
 
-    def __init__(self, remote_status=None, *, error_type=None):
+    def __init__(self, remote_status=None, *, error_type=None, operation='validation'):
         self.remote_status = remote_status
         if error_type is not None:
-            logger.warning('Mercado Pago: http_status=%s error_type=%s', remote_status, error_type)
+            logger.warning('Mercado Pago: operation=%s http_status=%s error_type=%s', operation, remote_status, error_type)
         super().__init__()
 
 
@@ -64,7 +64,8 @@ def configured():
     except ValueError:
         return False
     return bool(
-        settings.MP_ACCESS_TOKEN
+        settings.MP_MODE == 'test'
+        and settings.MP_ACCESS_TOKEN
         and settings.MP_WEBHOOK_SECRET
         and settings.MP_TEST_SELLER_ID.isdecimal()
         and settings.MP_TEST_BUYER_EMAIL.endswith('@testuser.com')
@@ -78,6 +79,7 @@ def request_mp(path, method='GET', body=None, *, identity=False):
     if not configured():
         raise MercadoPagoUnavailable()
     base = 'https://api.mercadolibre.com' if identity else 'https://api.mercadopago.com'
+    operation = 'seller_identity' if identity else 'create_subscription' if path == '/preapproval' and method == 'POST' else 'provider_request'
     headers = {'Authorization': f'Bearer {settings.MP_ACCESS_TOKEN}', 'Accept': 'application/json'}
     if body is not None:
         headers['Content-Type'] = 'application/json'
@@ -91,15 +93,15 @@ def request_mp(path, method='GET', body=None, *, identity=False):
             status = response.status
             data = json.load(response)
     except HTTPError as error:
-        raise MercadoPagoError(error.code, error_type=provider_error_type(error)) from None
+        raise MercadoPagoError(error.code, error_type=provider_error_type(error), operation=operation) from None
     except (HTTPException, OSError) as error:
         reason = error.reason if isinstance(error, URLError) else error
         error_type = 'upstream_timeout' if isinstance(reason, TimeoutError) else 'upstream_transport_error'
-        raise MercadoPagoError(status, error_type=error_type) from None
+        raise MercadoPagoError(status, error_type=error_type, operation=operation) from None
     except ValueError:
-        raise MercadoPagoError(status, error_type='upstream_invalid_json') from None
+        raise MercadoPagoError(status, error_type='upstream_invalid_json', operation=operation) from None
     if not isinstance(data, dict):
-        raise MercadoPagoError(status, error_type='upstream_unexpected_payload')
+        raise MercadoPagoError(status, error_type='upstream_unexpected_payload', operation=operation)
     return data
 
 
@@ -109,6 +111,7 @@ def verify_test_seller():
         str(user.get('id')) != settings.MP_TEST_SELLER_ID
         or 'test_user' not in (user.get('tags') or [])
     ):
+        logger.warning('Mercado Pago: operation=seller_identity error_type=test_seller_mismatch')
         raise MercadoPagoUnavailable()
 
 

@@ -25,10 +25,10 @@ const features = [
 ] as const
 
 const comments = [
-  { shop: 'Mercadinho Vale do Ipê', text: 'Monto o encarte da semana e reaproveito o projeto quando chegam ofertas novas.' },
-  { shop: 'Vitrine Flor de Linho', text: 'Gostei de usar as cores e o logo da loja nos banners. As promoções ficam com a cara da nossa marca.' },
-  { shop: 'Ponto do Circuito', text: 'Importar a lista de produtos ajuda muito quando preciso preparar várias ofertas de uma vez.' },
-  { shop: 'Café Varanda do Cedro', text: 'Coloquei o QR Code nas mesas e atualizo os preços do cardápio pelo painel. Também consigo trocar as ofertas na TV.' },
+  { shop: 'Mercados', text: 'Monte o encarte da semana e reaproveite o projeto quando chegarem ofertas novas.' },
+  { shop: 'Lojas de moda', text: 'Use as cores e o logo da loja para manter o mesmo estilo nas promoções.' },
+  { shop: 'Lojas de eletrônicos', text: 'Importe a lista de produtos para preparar várias ofertas de uma vez.' },
+  { shop: 'Cafeterias', text: 'Coloque o QR Code nas mesas e atualize os preços do cardápio pelo painel.' },
 ] as const
 
 function ShopComments() {
@@ -44,26 +44,26 @@ function ShopComments() {
 
   return (
     <section aria-labelledby="shop-comments" className="px-6 py-16 text-center sm:py-20">
-      <h2 id="shop-comments" className="text-3xl font-black">Comentários de lojistas</h2>
+      <h2 id="shop-comments" className="text-3xl font-black">Exemplos para cada tipo de loja</h2>
       <div className="mx-auto mt-7 max-w-2xl" onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
         <div aria-live={playing ? 'off' : 'polite'} className="grid">
           {comments.map(({ shop, text }, index) => (
             <figure key={shop} aria-hidden={index !== active}
               className={`col-start-1 row-start-1 grid content-center justify-items-center rounded-2xl border border-indigo-100 bg-indigo-50/60 px-6 py-8 transition-opacity duration-700 motion-reduce:transition-none sm:px-12 ${index === active ? 'opacity-100' : 'pointer-events-none opacity-0'}`}>
               <Quote size={24} aria-hidden="true" className="text-indigo-600" />
-              <blockquote className="mt-4 text-lg leading-relaxed text-slate-800">“{text}”</blockquote>
+              <p className="mt-4 text-lg leading-relaxed text-slate-800">{text}</p>
               <figcaption className="mt-4 text-sm font-semibold text-indigo-800">{shop}</figcaption>
             </figure>
           ))}
         </div>
         <div className="mt-3 flex items-center justify-center gap-1">
           {comments.map(({ shop }, index) => (
-            <button key={shop} type="button" aria-label={`Ver comentário de ${shop.toLowerCase()}`} aria-pressed={index === active}
+            <button key={shop} type="button" aria-label={`Ver exemplo para ${shop.toLowerCase()}`} aria-pressed={index === active}
               onClick={() => setActive(index)} className="grid size-10 place-items-center rounded-full">
               <span aria-hidden="true" className={`h-2 rounded-full transition-[width,background-color] motion-reduce:transition-none ${index === active ? 'w-5 bg-indigo-600' : 'w-2 bg-slate-400'}`} />
             </button>
           ))}
-          <button type="button" aria-label={playing ? 'Pausar comentários' : 'Reproduzir comentários'} onClick={() => setPlaying(value => !value)}
+          <button type="button" aria-label={playing ? 'Pausar exemplos por segmento' : 'Reproduzir exemplos por segmento'} onClick={() => setPlaying(value => !value)}
             className="grid size-10 place-items-center rounded-full text-slate-600 hover:bg-indigo-50">
             {playing ? <Pause size={16} aria-hidden="true" /> : <Play size={16} aria-hidden="true" />}
           </button>

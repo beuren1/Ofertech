@@ -23,27 +23,28 @@ const paymentLabels: Record<string, string> = {
   cancelled: 'Pagamento cancelado',
   canceled: 'Pagamento cancelado',
   refunded: 'Pagamento estornado',
+  refund_review: 'Estorno em análise',
   charged_back: 'Pagamento contestado',
 }
 
 const checkoutStatusId = 'test-checkout-status'
 const basicBenefits = [
-  'Banners, encartes, cartazes, etiquetas e vídeos',
+  'Banners, encartes, cartazes, etiquetas, stories, cardápios, vídeos e TV de Ofertas',
   'Remoção de fundo',
   'Templates básicos, PNG e vídeo conforme o navegador',
 ]
 const paidBenefits = [
-  'Banners, encartes, cartazes, etiquetas e vídeos',
+  'Banners, encartes, cartazes, etiquetas, stories, cardápios, vídeos e TV de Ofertas',
   'Templates básicos e Oferta Profissional',
   'Remoção de fundo',
   'PNG, JPG e PDF. MP4 quando o navegador é compatível',
-  'Artes sem marca d’água',
   'Geração e exportação em massa',
 ]
 
 const creditUnits = {
   banner: 'banner', flyer: 'página de encarte', poster: 'página de cartaz',
-  labels: 'folha de etiquetas', video: 'vídeo', cutout: 'recorte',
+  labels: 'folha de etiquetas', video: 'vídeo exportado', cutout: 'recorte',
+  story: 'story', menu: 'página de cardápio',
 } as const
 
 export function PlansPage() {
@@ -60,22 +61,24 @@ export function PlansPage() {
   const checkoutStatus = !accessToken
     ? 'Entre com a conta compradora de teste para contratar.'
     : billing
-      ? 'Checkout de teste indisponível. A configuração do Mercado Pago de teste ainda não foi concluída.'
+      ? 'Checkout de teste indisponível para esta conta. As assinaturas comerciais ainda não foram abertas.'
       : 'A contratação depende da confirmação da disponibilidade do checkout de teste.'
 
   useEffect(() => {
     let active = true
-    void Promise.all([
+    void Promise.allSettled([
       apiRequest<Plan[]>('plans/'),
       accessToken ? apiRequest<Billing>('billing/', { accessToken }) : Promise.resolve(null),
     ]).then(([catalog, account]) => {
       if (active) {
-        setPlans(catalog)
-        setBilling(account)
-        if (account && accessToken) syncPlan?.(account.plan, accessToken)
+        if (catalog.status === 'fulfilled') setPlans(catalog.value)
+        if (account.status === 'fulfilled') {
+          setBilling(account.value)
+          if (account.value && accessToken) syncPlan?.(account.value.plan, accessToken)
+        }
+        const failure = [catalog, account].find(result => result.status === 'rejected')
+        setError(failure?.status === 'rejected' ? getErrorMessage(failure.reason) : '')
       }
-    }).catch(reason => {
-      if (active) setError(getErrorMessage(reason))
     })
     return () => { active = false }
   }, [accessToken, syncPlan])
@@ -166,6 +169,7 @@ export function PlansPage() {
                 })}
               </ul>
             </details>
+            {plan.code !== 'free' && <p className="mt-3 text-sm text-slate-600 dark:text-slate-400">Assinatura mensal com renovação automática. Cancele pelo painel antes da próxima cobrança.</p>}
             {plan.code !== 'free' && (!checkoutAvailable || !subscriptionOpen || resumablePlan === plan.code) && (
               <button
                 className={`mt-5 ${button}`}
@@ -181,7 +185,14 @@ export function PlansPage() {
           </article>
         ))}
       </div>
-      <p className="text-sm text-slate-600 dark:text-slate-400">Em preparação para Business · equipes e atendimento prioritário.</p>
+      <section className={panel} aria-labelledby="billing-faq">
+        <h2 id="billing-faq" className="text-xl font-bold">Perguntas sobre planos e créditos</h2>
+        <div className="mt-3 space-y-3 text-sm">
+          <details><summary className="cursor-pointer font-semibold">Quando recebo os créditos do plano?</summary><p className="mt-2">No Grátis, a cota é renovada a cada mês. Nos planos pagos, a cota do novo ciclo é liberada quando o provedor confirma o pagamento. A cota mensal é renovada sem acumular o saldo anterior.</p></details>
+          <details><summary className="cursor-pointer font-semibold">Quanto custa exportar?</summary><p className="mt-2">O custo varia por arte, folha ou página. Veja a tabela de cada plano. A reprodução pelo link da TV de Ofertas não é uma exportação de vídeo.</p></details>
+          <details><summary className="cursor-pointer font-semibold">Como cancelar ou solicitar reembolso?</summary><p className="mt-2">Use Cancelar assinatura no painel. Veja o procedimento em <Link to="/cancelamentos" className="underline">Cancelamentos e reembolsos</Link>.</p></details>
+        </div>
+      </section>
       {billing && (
         <section className={panel}>
           <h2 className="text-xl font-bold">Histórico de créditos</h2>
@@ -191,7 +202,7 @@ export function PlansPage() {
                 <span>{new Date(item.created_at).toLocaleDateString('pt-BR')} · {({
                   renewal: 'Renovação mensal', adjustment: 'Ajuste administrativo', generation: 'Banners',
                   flyer: 'Exportação de encarte', poster: 'Exportação de cartaz', labels: 'Exportação de etiquetas',
-                  video: 'Exportação de vídeo', cutout: 'Remoção de fundo',
+                  video: 'Exportação de vídeo', cutout: 'Remoção de fundo', story: 'Exportação de story', menu: 'Exportação de cardápio',
                 } as Record<string, string>)[item.kind] ?? 'Movimento de créditos'}</span>
                 <span>{item.amount > 0 ? '+' : ''}{number.format(item.amount)} · saldo {number.format(item.balance)}</span>
               </li>

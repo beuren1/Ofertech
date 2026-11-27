@@ -44,6 +44,14 @@ class PasswordSecurityTests(APITestCase):
             'username': username or self.account.username, 'password': password,
         }, format='json', **extra)
 
+    def test_registration_is_limited_by_ip_before_creating_accounts(self):
+        endpoint = '/api/auth/register/'
+        for _ in range(20):
+            self.assertEqual(self.client.post(endpoint, {}, format='json', REMOTE_ADDR='192.0.2.50').status_code, 400)
+        self.assertEqual(self.client.post(endpoint, {}, format='json', REMOTE_ADDR='192.0.2.50').status_code, 429)
+        self.assertEqual(self.client.post(endpoint, {}, format='json', REMOTE_ADDR='192.0.2.51').status_code, 400)
+        self.assertEqual(get_user_model().objects.count(), 1)
+
     def test_generic_request_and_async_single_delivery_with_password_reset(self):
         known = self.reset_request(self.account.email)
         unknown = self.reset_request('inexistente@example.test')

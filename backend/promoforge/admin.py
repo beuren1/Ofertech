@@ -28,10 +28,28 @@ class PlanAdmin(admin.ModelAdmin):
 
 
 admin.site.register(Profile)
-admin.site.register(StoreBrand)
-admin.site.register(Campaign)
 admin.site.register(Template)
 admin.site.register(Promotion)
+
+
+@admin.register(StoreBrand)
+class StoreBrandAdmin(admin.ModelAdmin):
+    exclude = ('logo',)
+    readonly_fields = ('logo_reference',)
+
+    @admin.display(description='Referência do logotipo')
+    def logo_reference(self, obj):
+        return obj.logo.name if obj else ''
+
+
+@admin.register(Campaign)
+class CampaignAdmin(admin.ModelAdmin):
+    exclude = ('thumbnail',)
+    readonly_fields = ('thumbnail_reference',)
+
+    @admin.display(description='Referência da miniatura')
+    def thumbnail_reference(self, obj):
+        return obj.thumbnail.name if obj else ''
 
 
 @admin.register(CreditAdjustment)

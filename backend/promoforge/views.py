@@ -142,6 +142,7 @@ class RegisterView(APIView):
 
     def post(self, request):
         check_auth_origin(request)
+        take_or_throttle('register-ip', client_ip(request), (20, 15 * 60))
         serializer = RegisterSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         with transaction.atomic():

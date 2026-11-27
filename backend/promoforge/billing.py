@@ -12,6 +12,8 @@ from django.db import connection, OperationalError, transaction
 from django.db.models import F, Sum
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.utils.decorators import method_decorator
+from django.views.decorators.cache import never_cache
 from rest_framework.exceptions import APIException, ValidationError
 from rest_framework import serializers
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -76,6 +78,7 @@ class PlansView(APIView):
         return Response([plan_data(plan) for plan in Plan.objects.order_by('monthly_price', 'code')])
 
 
+@method_decorator(never_cache, name='dispatch')
 class BillingView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -105,7 +108,7 @@ class BillingView(APIView):
                 'plan': plan_data(account.plan), 'credits': account.credits,
                 'monthly_limit': account.monthly_limit, 'used': used,
                 'period': account.period, 'cancel_at_period_end': account.cancel_at_period_end,
-                'checkout_available': configured(),
+                'checkout_available': configured() and request.user.email.lower() == settings.MP_TEST_BUYER_EMAIL,
                 'subscription_plan': change.plan_id if change else None,
                 'subscription_status': change.status if change else None,
                 'payment_status': payment_state,
@@ -115,6 +118,7 @@ class BillingView(APIView):
             })
 
 
+@method_decorator(never_cache, name='dispatch')
 class PlanChangeView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -157,6 +161,13 @@ class MercadoPagoWebhookView(APIView):
             elif event == 'subscription_authorized_payment' and resource.isascii() and resource.isdecimal() and len(resource) <= 40:
                 verify_test_seller()
                 process_invoice(resource)
+            elif event == 'payment' and resource.isascii() and resource.isdecimal() and len(resource) <= 40:
+                from .billing_models import SubscriptionPayment
+
+                payment = SubscriptionPayment.objects.filter(pk=resource).values('invoice_id', 'invoice__change_id').first()
+                if payment:
+                    verify_test_seller()
+                    process_invoice(payment['invoice_id'], expected_change_id=payment['invoice__change_id'])
         return Response(status=200)
 
 

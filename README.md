@@ -148,8 +148,10 @@ Use the Django development server only for this test setup.
 
 ### Homologação no Render e na Vercel
 
+No Render, use mídia S3 privada, conforme o [guia de Render Free e R2](docs/render-free-r2.md).
+
 Use um ambiente separado para validar o procedimento antes da publicação.
-No Render, configure `backend` como diretório raiz e `pip install -r requirements.txt`
+No Render, configure `backend` como diretório raiz e `python -m pip install -r requirements.txt && python manage.py collectstatic --noinput`
 como comando de build. Vincule a URL interna do PostgreSQL em `DATABASE_URL` e
 mantenha `DJANGO_DEBUG=False`. O perfil Render é ativado pela variável `RENDER`
 da plataforma e inclui `RENDER_EXTERNAL_HOSTNAME` nos hosts permitidos.
@@ -158,13 +160,11 @@ da plataforma e inclui `RENDER_EXTERNAL_HOSTNAME` nos hosts permitidos.
   homologação. Se a instância existente usa SQLite, `migrate` cria ou atualiza o
   esquema PostgreSQL. A cópia dos registros para o novo banco exige um procedimento
   separado com conferência de usuários, projetos, relacionamentos, saldo e histórico.
-- Configure `DJANGO_MEDIA_ROOT` com o próprio ponto de montagem do disco persistente,
-  por exemplo `/var/data/media`. Preserve os caminhos relativos dos arquivos ao
-  copiar a mídia existente. O disco deve ficar fora da árvore de arquivos estáticos.
-  O Render oferece discos persistentes para serviços compatíveis em planos pagos.
-- Revise `python manage.py migrate --plan` antes de executar a migração. Configure
-  `python manage.py migrate --noinput` no pre-deploy e `sh start-render.sh` no start.
-  O start verifica o disco gravável e as migrações antes de iniciar o Gunicorn.
+- Preserve os caminhos relativos dos arquivos ao copiar a mídia existente ao R2.
+  WhiteNoise serve os arquivos estáticos coletados no build.
+- Revise `python manage.py migrate --plan` antes da publicação. Configure
+  `sh start-render.sh` no start. Ele verifica o bucket e aplica as migrações
+  pendentes antes de iniciar o Gunicorn.
   Configure `/api/health/` como health check. Ele retorna `200` com `status: ok`
   quando o banco responde e `503` com `status: unavailable` quando há falha de banco.
 - Configure `frontend` como diretório raiz na Vercel. Use `VITE_API_URL=/api` se
@@ -340,4 +340,4 @@ python manage.py test
 
 Os custos e limites dos recursos existentes continuam definidos pelas regras de planos do Django. TV de Ofertas usa slides no navegador e não registra uma exportação de vídeo. O painel comercial e seu CSV incluem projetos e exportações de Stories e Cardápios, playlists, links de TV e o uso de Etiquetas.
 
-Antes de publicar, revise a migração `0011_project_share` com `python manage.py migrate --plan` e aplique-a no Render pelo fluxo já configurado de pré-deploy. A migração cria a tabela de links e não altera usuários, projetos existentes ou saldos. Na Vercel, mantenha o proxy de `/api` e o fallback para o React Router, que também atende `/cardapio/:token` e `/tv/player/:token`. Nenhuma variável nova é necessária.
+Antes de publicar, revise a migração `0011_project_share` com `python manage.py migrate --plan`. No Render, o script de inicialização aplica as migrações pendentes. A migração cria a tabela de links. Na Vercel, mantenha o proxy de `/api` e o fallback para o React Router, que também atende `/cardapio/:token` e `/tv/player/:token`.

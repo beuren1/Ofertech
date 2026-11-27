@@ -7,6 +7,7 @@ import dj_database_url
 
 from dotenv import load_dotenv
 from django.core.exceptions import ImproperlyConfigured
+from .media_storage import media_storage_settings
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / '.env', encoding='utf-8-sig')
@@ -74,6 +75,8 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+if ON_RENDER:
+    MIDDLEWARE.insert(1, 'whitenoise.middleware.WhiteNoiseMiddleware')
 if TUNNEL_HOST:
     MIDDLEWARE.insert(0, 'config.middleware.CloudflareTunnelMiddleware')
 
@@ -115,12 +118,16 @@ LANGUAGE_CODE = 'pt-br'
 TIME_ZONE = 'America/Sao_Paulo'
 USE_I18N = True
 USE_TZ = True
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = Path(os.getenv('DJANGO_MEDIA_ROOT', BASE_DIR / 'media'))
-if ON_RENDER and RENDER_HOST and ('DJANGO_MEDIA_ROOT' not in os.environ or not MEDIA_ROOT.is_absolute()):
-    raise ImproperlyConfigured('Configure DJANGO_MEDIA_ROOT com um caminho absoluto no disco persistente.')
+MEDIA_STORAGE_MODE, MEDIA_STORAGE_CONFIG = media_storage_settings(os.environ, on_render=ON_RENDER)
+STORAGES = {
+    'default': MEDIA_STORAGE_CONFIG,
+    'staticfiles': {'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage' if ON_RENDER
+                    else 'django.contrib.staticfiles.storage.StaticFilesStorage'},
+}
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 REST_FRAMEWORK = {
@@ -211,6 +218,9 @@ for origin in os.getenv('DJANGO_CORS_ALLOWED_ORIGINS', '').split(','):
 CORS_ALLOW_CREDENTIALS = True
 
 MP_ACCESS_TOKEN = os.getenv('MP_ACCESS_TOKEN', '').strip()
+MP_MODE = os.getenv('MP_MODE', 'test').strip().lower()
+if MP_MODE not in {'off', 'test'}:
+    raise ImproperlyConfigured('MP_MODE aceita off ou test. O checkout comercial ainda não está habilitado.')
 MP_TEST_SELLER_ID = os.getenv('MP_TEST_SELLER_ID', '').strip()
 MP_TEST_BUYER_EMAIL = os.getenv('MP_TEST_BUYER_EMAIL', '').strip().lower()
 MP_WEBHOOK_SECRET = os.getenv('MP_WEBHOOK_SECRET', '').strip()

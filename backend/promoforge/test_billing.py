@@ -101,10 +101,15 @@ class BillingTests(TestCase):
 
     def test_paid_checkout_is_disabled_without_configuration(self):
         with self.settings(
+            MP_MODE='test',
             MP_ACCESS_TOKEN='fixture-token', MP_TEST_SELLER_ID='123',
             MP_TEST_BUYER_EMAIL='buyer@testuser.com', MP_WEBHOOK_SECRET='fixture-secret',
             MP_BACK_URL='https://test.example.org/plans',
         ), patch('promoforge.mercado_pago.request_mp') as request_mp:
+            self.assertFalse(self.account()['checkout_available'])
+            self.assertEqual(self.client.post('/api/billing/change/', {'plan': 'pro'}, format='json').status_code, 403)
+            self.user.email = 'buyer@testuser.com'
+            self.user.save(update_fields=['email'])
             self.assertTrue(self.account()['checkout_available'])
             for setting in ('MP_ACCESS_TOKEN', 'MP_WEBHOOK_SECRET', 'MP_BACK_URL'):
                 with self.subTest(setting=setting), self.settings(**{setting: ''}):

@@ -3,6 +3,13 @@ import { Link } from 'react-router-dom'
 export const BRAND = 'Ofertech'
 export const SLOGAN = 'Sua oferta merece destaque.'
 export const BRAND_DESCRIPTION = 'Crie banners, encartes, cartazes, etiquetas de preço e vídeos promocionais com a identidade da sua loja.'
+export const commercialLinks = [
+  ['termos', 'Termos de Uso'],
+  ['privacidade', 'Política de Privacidade'],
+  ['cancelamentos', 'Cancelamentos e reembolsos'],
+  ['ajuda', 'Central de Ajuda'],
+  ['excluir-conta', 'Exclusão de conta e dados'],
+] as const
 
 export function BrandLink({ className = '' }: { className?: string }) {
   return (
@@ -21,6 +28,9 @@ export function BrandFooter({ className = '' }: { className?: string }) {
         <span>Desenvolvido por Josué Beuren</span>
       </div>
       <span>{SLOGAN}</span>
+      <nav aria-label="Informações e suporte" className="flex flex-wrap gap-x-5 gap-y-2">
+        {commercialLinks.map(([page, title]) => <Link key={page} to={`/${page}`} className="underline underline-offset-4">{title}</Link>)}
+      </nav>
     </footer>
   )
 }

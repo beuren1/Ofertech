@@ -11,11 +11,12 @@ import { HistoryPage } from './pages/History'
 import { PlansPage } from './pages/Plans'
 import { SettingsPage } from './pages/Settings'
 import { StorePage } from './pages/Store'
-import { BrandFooter } from './components/Brand'
+import { BrandFooter, commercialLinks } from './components/Brand'
 import { PageMetadata } from './components/PageMetadata'
 const GeneratorPage = lazy(() => import('./pages/Generator').then(module => ({ default: module.GeneratorPage })))
 const BulkPage = lazy(() => import('./pages/Bulk').then(module => ({ default: module.BulkPage })))
 const FlyerPageEditor = lazy(() => import('./pages/Flyer').then(module => ({ default: module.FlyerPageEditor })))
+const CommercialInfo = lazy(() => import('./pages/CommercialInfo').then(module => ({ default: module.CommercialInfo })))
 const PublicMenuPage = lazy(() => import('./pages/PublicMenu').then(module => ({ default: module.PublicMenuPage })))
 const TvPlayerPage = lazy(() => import('./pages/TvPlayer').then(module => ({ default: module.TvPlayerPage })))
 const CommercialDashboard = lazy(() => import('./pages/CommercialDashboard').then(module => ({ default: module.CommercialDashboard })))
@@ -69,6 +70,7 @@ export default function App() {
             <Route path="/reset-password" element={<Suspense fallback={<p role="status" className="p-8">Carregando…</p>}><ResetPasswordPage /></Suspense>} />
             <Route path="/register" element={<AuthPage mode="register" />} />
             <Route path="/plans" element={<PlansRoute />} />
+            {commercialLinks.map(([page]) => <Route key={page} path={`/${page}`} element={<Suspense fallback={<LoadingPage />}><CommercialInfo page={page} /></Suspense>} />)}
             <Route path="/generator" element={withLayout(<GeneratorPage initialSearch={search} />)} />
             <Route path="/bulk" element={withLayout(<BulkPage initialSearch={search} />)} />
             <Route path="/flyers" element={withLayout(<FlyerPageEditor key={`flyers${search}`} initialSearch={search} />)} />

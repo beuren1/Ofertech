@@ -88,7 +88,7 @@ def change_for_agreement(data):
 
 def find_submitted(change):
     offset = 0
-    while True:
+    for _ in range(10):
         params = urlencode({'payer_email': settings.MP_TEST_BUYER_EMAIL, 'offset': offset, 'limit': 30})
         result = mp.request_mp(f'/preapproval/search?{params}')
         rows = result.get('results') or []
@@ -100,7 +100,8 @@ def find_submitted(change):
                 return mp.request_mp(f'/preapproval/{remote_id}')
         offset += len(rows)
         if not rows or offset >= (result.get('paging') or {}).get('total', offset):
-            raise SubscriptionConflict('O Mercado Pago ainda não confirmou a criação. Tente consultar novamente.')
+            break
+    raise SubscriptionConflict('O Mercado Pago ainda não confirmou a criação. Consulte a situação antes de tentar novamente.')
 
 
 def start_checkout(user, plan):
@@ -175,7 +176,7 @@ def next_month(day, anchor):
     return day.replace(year=year, month=month, day=min(max(day.day, anchor), monthrange(year, month)[1]))
 
 
-def process_invoice(resource):
+def process_invoice(resource, *, expected_change_id=None):
     invoice_data = mp.request_mp(f'/authorized_payments/{resource}')
     if str(invoice_data.get('id')) != resource:
         raise mp.MercadoPagoError()
@@ -184,6 +185,8 @@ def process_invoice(resource):
         raise mp.MercadoPagoError()
     agreement = mp.request_mp(f'/preapproval/{remote_id}')
     change = change_for_agreement(agreement)
+    if expected_change_id is not None and (not change or change.pk != expected_change_id):
+        raise mp.MercadoPagoError(error_type='invoice_subscription_mismatch')
     if not change:
         return
     validate_agreement(change, agreement, remote_id)
@@ -216,7 +219,7 @@ def process_invoice(resource):
         and matching_amount(payment_data.get('transaction_amount_refunded', 0), Decimal('0'))
     )
     if state == 'approved' and not confirmed:
-        state = 'unconfirmed'
+        state = 'unconfirmed' if matching_amount(payment_data.get('transaction_amount_refunded', 0), Decimal('0')) else 'refund_review'
 
     with billing_account(change.subscription.user, refresh_allowance=False) as account:
         change.refresh_from_db()
@@ -236,7 +239,7 @@ def process_invoice(resource):
                 return
             payment.status, payment.updated_at = state, updated
             payment.save(update_fields=['status', 'updated_at'])
-        if not invoice.applied or confirmed or state in {'refunded', 'charged_back'}:
+        if not invoice.applied or confirmed or state in {'refunded', 'charged_back', 'refund_review'}:
             invoice.status = state
             invoice.save(update_fields=['status'])
         if confirmed and change.status == 'authorized':
@@ -289,4 +292,18 @@ def process_agreement(resource):
         with billing_account(change.subscription.user, refresh_allowance=False) as account:
             change.refresh_from_db()
             save_agreement(account, change, agreement)
+
+
+def reconcile_subscription(change, invoice_ids=()):
+    mp.verify_test_seller()
+    if change.provider_reference:
+        agreement = mp.request_mp(f'/preapproval/{change.provider_reference}')
+    else:
+        agreement = find_submitted(change)
+    validate_agreement(change, agreement)
+    with billing_account(change.subscription.user, refresh_allowance=False) as account:
+        change.refresh_from_db()
+        save_agreement(account, change, agreement)
+    for invoice_id in invoice_ids:
+        process_invoice(invoice_id, expected_change_id=change.pk)
 

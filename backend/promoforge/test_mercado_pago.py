@@ -1,10 +1,12 @@
 from datetime import date
+from io import StringIO
 from hmac import new as hmac_new
 from io import BytesIO
 from unittest.mock import patch
 from urllib.error import HTTPError
 
 from django.contrib.auth import get_user_model
+from django.core.management import call_command
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
@@ -13,6 +15,7 @@ from .mercado_pago import MercadoPagoError, request_mp
 
 
 @override_settings(
+    MP_MODE='test',
     MP_ACCESS_TOKEN='fake-token',
     MP_TEST_SELLER_ID='123',
     MP_TEST_BUYER_EMAIL='buyer@testuser.com',
@@ -116,6 +119,37 @@ class MercadoPagoTests(TestCase):
         self.assertEqual(self.account()['subscription_status'], 'authorized')
         self.assertEqual(self.account()['credits'], 10)
 
+    @override_settings(MP_MODE='off')
+    def test_checkout_disabled_in_off_mode(self):
+        self.assertFalse(self.account()['checkout_available'])
+        self.assertEqual(self.checkout().status_code, 503)
+        self.request.assert_not_called()
+
+    def test_reconciliation_is_local_by_default_and_replays_without_a_second_renewal(self):
+        self.assertEqual(self.checkout().status_code, 202)
+        change = PlanChange.objects.latest('pk')
+        self.request.reset_mock()
+        output = StringIO()
+        call_command('reconcile_subscription', change.pk, '--invoice', '91', stdout=output)
+        self.request.assert_not_called()
+        self.assertIn('Consulta local', output.getvalue())
+        self.remote_status = 'authorized'
+        for _ in range(2):
+            call_command('reconcile_subscription', change.pk, '--invoice', '91', '--apply', stdout=output)
+        self.assertTrue(RecurringInvoice.objects.get(pk='91').applied)
+        self.assertEqual(CreditMovement.objects.filter(key__startswith='mp:').count(), 1)
+        self.assertTrue(all(len(call.args) == 1 or call.args[1] == 'GET' for call in self.request.call_args_list))
+
+    def test_signed_payment_update_records_refund_without_issuing_more_credits(self):
+        self.assertEqual(self.checkout().status_code, 202)
+        self.remote_status = 'authorized'
+        self.assertEqual(self.notify().status_code, 200)
+        self.payment_status = 'refunded'
+        self.assertEqual(self.notify(self.payment_id, 'payment', signed=False).status_code, 401)
+        self.assertEqual(self.notify(self.payment_id, 'payment').status_code, 200)
+        self.assertEqual(RecurringInvoice.objects.get(pk='91').status, 'refunded')
+        self.assertEqual(CreditMovement.objects.filter(key__startswith='mp:').count(), 1)
+
     def test_recovers_checkout_after_an_uncertain_provider_response(self):
         self.checkout_error = True
         self.assertEqual(self.checkout().status_code, 502)
@@ -139,7 +173,7 @@ class MercadoPagoTests(TestCase):
                     with self.assertRaises(MercadoPagoError) as raised:
                         request_mp('/preapproval', 'POST', {'payer_email': 'private-details'})
                 self.assertEqual(raised.exception.remote_status, 400)
-                self.assertEqual(logs.records[0].getMessage(), f'Mercado Pago: http_status=400 error_type={error_type}')
+                self.assertEqual(logs.records[0].getMessage(), f'Mercado Pago: operation=create_subscription http_status=400 error_type={error_type}')
 
     def test_refuses_a_seller_without_test_identity(self):
         self.seller_tags = ['normal']

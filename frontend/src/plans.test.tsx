@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
+import { MemoryRouter } from 'react-router-dom'
 import { apiRequest } from './auth'
 import { PlansPage } from './pages/Plans'
 
@@ -26,12 +27,13 @@ it('shows disabled paid plan buttons when the test checkout is unavailable', asy
       plan: free, credits: 10, monthly_limit: 10, used: 0, history: [], checkout_available: false,
     })
 
-  render(<PlansPage />)
+  render(<MemoryRouter><PlansPage /></MemoryRouter>)
 
-  const explanation = await screen.findByText(/a configuração do Mercado Pago de teste ainda não foi concluída/i)
+  const explanation = await screen.findByText(/Checkout de teste indisponível para esta conta/i)
   expect(screen.getByText('Mais popular').closest('article')?.textContent).toContain('Pro')
   expect(screen.getByText('Plano atual')).toBeTruthy()
-  expect(screen.getByText(/equipes e atendimento prioritário/i).closest('article')).toBeNull()
+  expect(screen.getByRole('heading', { name: 'Perguntas sobre planos e créditos' })).toBeTruthy()
+  expect(screen.getAllByText(/página de cardápio/i)).toHaveLength(3)
   for (const name of ['Assinar Pro em teste', 'Assinar Business em teste']) {
     const button = screen.getByRole<HTMLButtonElement>('button', { name })
     expect(button.disabled).toBe(true)
