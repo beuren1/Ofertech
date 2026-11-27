@@ -285,6 +285,16 @@ class PixCheckoutTests(TestCase):
         change.refresh_from_db()
         self.assertEqual(change.status, 'authorized')
 
+    @override_settings(ASAAS_API_KEY='$aact_prod_fake')
+    def test_unavailable_sandbox_does_not_offer_mercado_pago(self):
+        billing = self.client.get('/api/billing/').data
+        self.assertTrue(billing['pix_selected'])
+        self.assertFalse(billing['pix_available'])
+        self.assertFalse(billing['checkout_available'])
+        self.assertEqual(self.client.post('/api/billing/change/', {'plan': 'pro'}).status_code, 409)
+        self.assertEqual(self.create().status_code, 503)
+        self.remote_calls.assert_not_called()
+
     @patch('promoforge.pix_views.take_or_throttle')
     def test_provider_http_errors_keep_customer_and_payment_failures_distinct(self, _throttle):
         self.assertEqual(self.client.get('/api/billing/').data['credits'], 10)

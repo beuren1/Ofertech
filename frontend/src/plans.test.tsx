@@ -56,3 +56,14 @@ it('links to one-off Pix checkout when the sandbox is enabled', async () => {
   expect(screen.getByText(/sem renovação automática/i)).toBeTruthy()
   expect(screen.queryByRole('button', { name: /assinar/i })).toBeNull()
 })
+
+it('shows Pix as unavailable without falling back to a subscription', async () => {
+  const pro = { code: 'pro', name: 'Pro', monthly_price: '19.99', monthly_credits: 200 }
+  vi.mocked(apiRequest).mockResolvedValueOnce([pro]).mockResolvedValueOnce({
+    plan: pro, credits: 10, monthly_limit: 10, used: 0, history: [],
+    pix_selected: true, pix_available: false, checkout_available: false,
+  })
+  render(<MemoryRouter><PlansPage /></MemoryRouter>)
+  expect(await screen.findByText('Pagamento Pix indisponível no momento.')).toBeTruthy()
+  expect(screen.queryByRole('button', { name: /assinar/i })).toBeNull()
+})

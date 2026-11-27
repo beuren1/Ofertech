@@ -157,7 +157,7 @@ export function PlansPage() {
       )}
       <div className="grid gap-5 lg:grid-cols-3">
         {plans.map(plan => {
-          const oneOff = plan.code !== 'free' && (billing?.pix_available ?? plan.pix_available)
+          const oneOff = plan.code !== 'free' && (billing?.pix_selected ?? plan.pix_selected ?? billing?.pix_available ?? plan.pix_available)
           return <article key={plan.code} className={`flex flex-col ${panel} ${plan.code === 'pro' ? 'ring-2 ring-indigo-500' : ''}`}>
             {plan.code === 'pro' && <span className="mb-2 self-start rounded-full bg-indigo-100 px-3 py-1 text-sm font-semibold text-indigo-800">Mais popular</span>}
             <h2 className="text-xl font-bold">{plan.name}</h2>
@@ -193,7 +193,10 @@ export function PlansPage() {
             {billing?.pix_available && !billing.pix_order && !subscriptionOpen && !billing.pix_legacy_paid && plan.code !== 'free' && (
               <Link to={`/plans/pix/${plan.code}`} className={`mt-5 text-center ${button}`}>Pagar com Pix</Link>
             )}
-            {accessToken && !billing?.pix_available && plan.code !== 'free' && (!checkoutAvailable || !subscriptionOpen || resumablePlan === plan.code) && (
+            {oneOff && billing && !billing.pix_available && !billing.pix_order && (
+              <p role="status" className="mt-5 text-sm">Pagamento Pix indisponível no momento.</p>
+            )}
+            {accessToken && !oneOff && plan.code !== 'free' && (!checkoutAvailable || !subscriptionOpen || resumablePlan === plan.code) && (
               <button
                 className={`mt-5 ${button}`}
                 disabled={busy || !checkoutAvailable}
@@ -203,7 +206,7 @@ export function PlansPage() {
                 {resumablePlan === plan.code ? 'Continuar para o checkout' : `Assinar ${plan.name} em teste`}
               </button>
             )}
-            {accessToken && !billing?.pix_available && plan.code !== 'free' && !checkoutAvailable && (
+            {accessToken && !oneOff && plan.code !== 'free' && !checkoutAvailable && (
               <div id={`checkout-status-${plan.code}`} className="mt-3 space-y-2 rounded-xl bg-slate-100 p-3 text-sm text-slate-800 dark:bg-slate-800 dark:text-slate-100">
                 <div role="status">
                   {checkoutReasons.length ? <ul className="list-disc space-y-1 pl-5">

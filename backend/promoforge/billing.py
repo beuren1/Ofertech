@@ -86,7 +86,8 @@ class PlansView(APIView):
 
         available = pix_enabled()
         return Response([
-            {**plan_data(plan), 'pix_available': available and plan.code in ('pro', 'business')}
+            {**plan_data(plan), 'pix_available': available and plan.code in ('pro', 'business'),
+             'pix_selected': settings.ASAAS_ENVIRONMENT != 'disabled' and plan.code in ('pro', 'business')}
             for plan in Plan.objects.order_by('monthly_price', 'code')
         ])
 
@@ -120,15 +121,17 @@ class BillingView(APIView):
                 )
             )
             pix_available = pix_enabled()
-            blockers = [] if pix_available else checkout_blockers(request.user)
+            pix_selected = settings.ASAAS_ENVIRONMENT != 'disabled'
+            blockers = [] if pix_selected else checkout_blockers(request.user)
             pix_order = account.pix_orders.filter(open=True).select_related('plan').first()
             return Response({
                 'plan': plan_data(account.plan), 'credits': account.credits,
                 'monthly_limit': account.monthly_limit, 'used': used,
                 'period': account.period, 'cancel_at_period_end': account.cancel_at_period_end,
-                'checkout_available': not pix_available and not blockers,
+                'checkout_available': not pix_selected and not blockers,
                 'checkout_blockers': blockers,
                 'pix_available': pix_available,
+                'pix_selected': pix_selected,
                 'pix_legacy_paid': legacy_paid(account),
                 'pix_customer_registered': account.pix_orders.exists() if pix_available else False,
                 'pix_order': order_data(pix_order) if pix_order else None,
@@ -146,7 +149,6 @@ class PlanChangeView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        from .asaas import enabled as pix_enabled
         from .pix_billing import PixConflict
         from .recurring import cancel_subscription, start_checkout
 
@@ -158,7 +160,7 @@ class PlanChangeView(APIView):
             with billing_account(request.user) as account:
                 cancel_subscription(account)
                 return Response({'cancel_at_period_end': account.cancel_at_period_end})
-        if pix_enabled():
+        if settings.ASAAS_ENVIRONMENT != 'disabled':
             raise PixConflict('Novas compras de planos são feitas pelo checkout Pix.')
         change = start_checkout(request.user, plan)
         return Response({

@@ -8,6 +8,7 @@ export type Plan = {
   monthly_price: string
   monthly_credits: number
   pix_available?: boolean
+  pix_selected?: boolean
   limits?: { stores: number; batch: number; features: string[]; formats: string[] }
   costs?: Record<keyof typeof CREDIT_COSTS, number>
 }
@@ -20,6 +21,7 @@ export type Billing = {
   period: string
   checkout_available: boolean
   pix_available?: boolean
+  pix_selected?: boolean
   pix_legacy_paid?: boolean
   pix_customer_registered?: boolean
   pix_order?: PixOrder | null
