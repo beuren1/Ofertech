@@ -111,8 +111,18 @@ class MercadoPagoTests(TestCase):
             self.assertIn('/subscriptions/checkout', result.data['checkout_url'])
         calls = [call for call in self.request.call_args_list if call.args[:2] == ('/preapproval', 'POST')]
         self.assertEqual(len(calls), 1)
-        self.assertEqual(calls[0].args[2]['auto_recurring']['transaction_amount'], 19.99)
-        self.assertEqual(calls[0].args[2]['status'], 'pending')
+        change = PlanChange.objects.get()
+        self.assertEqual(calls[0].args[2], {
+            'reason': f'Ofertech {change.plan.name}',
+            'external_reference': change.external_reference,
+            'payer_email': 'buyer@testuser.com',
+            'auto_recurring': {
+                'frequency': 1, 'frequency_type': 'months',
+                'transaction_amount': 19.99, 'currency_id': 'BRL',
+            },
+            'back_url': 'https://test.example.org/plans',
+            'status': 'pending',
+        })
         self.assertEqual(self.checkout('business').status_code, 409)
         self.remote_status = 'authorized'
         self.assertEqual(self.notify('test-agreement-1', 'subscription_preapproval').status_code, 200)
@@ -162,19 +172,46 @@ class MercadoPagoTests(TestCase):
 
     def test_upstream_error_logs_only_safe_diagnostics(self):
         cases = (
-            (b'{"error":"bad_request","message":"private-details"}', 'bad_request'),
-            (b'{"error":"private-details","code":"private-details"}', 'upstream_http_error'),
-            (b'not-json-private-details', 'upstream_http_error'),
+            (400, b'{"error":"bad_request","status":400,"message":"Both payer and collector must be real or test users."}',
+             'bad_request body_status=400 messages=buyer_seller_environment_mismatch'),
+            (401, b'{"error":"unauthorized","message":"Invalid access token"}',
+             'unauthorized messages=invalid_access_token'),
+            (403, b'{"error":"PA_UNAUTHORIZED_RESULT_FROM_POLICIES","message":"private-details"}',
+             'PA_UNAUTHORIZED_RESULT_FROM_POLICIES'),
+            (422, b'{"error":"validation_error","cause":[{"code":422,"field":"payer_email","description":"Payer not found"},{"field":"private-details","description":"buyer@example.org","code":"fake-token"}]}',
+             'validation_error fields=payer_email messages=buyer_not_found cause_codes=422'),
+            (400, b'{"error":"private-details","code":"private-details"}', 'upstream_http_error'),
+            (400, b'not-json-private-details', 'upstream_http_error'),
         )
-        for body, error_type in cases:
-            error = HTTPError('https://api.mercadopago.com/preapproval', 400, 'private-details', {}, BytesIO(body))
-            with self.subTest(error_type=error_type), patch('promoforge.mercado_pago.build_opener') as opener:
+        for status, body, log_details in cases:
+            error = HTTPError('https://api.mercadopago.com/preapproval', status, 'private-details', {}, BytesIO(body))
+            with self.subTest(status=status, diagnostics=log_details), patch('promoforge.mercado_pago.build_opener') as opener:
                 opener.return_value.open.side_effect = error
                 with self.assertLogs('promoforge.mercado_pago', level='WARNING') as logs:
                     with self.assertRaises(MercadoPagoError) as raised:
                         request_mp('/preapproval', 'POST', {'payer_email': 'private-details'})
-                self.assertEqual(raised.exception.remote_status, 400)
-                self.assertEqual(logs.records[0].getMessage(), f'Mercado Pago: operation=create_subscription http_status=400 error_type={error_type}')
+                self.assertEqual(raised.exception.remote_status, status)
+                self.assertEqual(logs.records[0].getMessage(), f'Mercado Pago: operation=create_subscription http_status={status} error_type={log_details}')
+
+    def test_definitive_checkout_rejections_leave_credits_and_plan_unchanged(self):
+        for status in (400, 401, 403, 422):
+            def reject_checkout(path, method='GET', body=None, **kwargs):
+                if (path, method) == ('/preapproval', 'POST'):
+                    raise MercadoPagoError(status)
+                return self.remote_request(path, method, body, **kwargs)
+
+            with self.subTest(status=status), patch('promoforge.mercado_pago.request_mp', side_effect=reject_checkout):
+                self.assertEqual(self.checkout().status_code, 502)
+                self.assertEqual(PlanChange.objects.latest('pk').status, 'failed')
+                account = self.account()
+                self.assertEqual(account['credits'], 10)
+                self.assertEqual(account['plan']['code'], 'free')
+
+    @override_settings(MP_TEST_BUYER_EMAIL='@testuser.com')
+    def test_refuses_malformed_test_buyer_email(self):
+        self.assertIn('test_buyer_invalid', self.account()['checkout_blockers'])
+        self.assertEqual(self.checkout().status_code, 503)
+        self.request.assert_not_called()
 
     def test_refuses_a_seller_without_test_identity(self):
         self.seller_tags = ['normal']

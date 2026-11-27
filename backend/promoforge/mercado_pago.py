@@ -9,6 +9,8 @@ from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
+from django.core.validators import validate_email
 from rest_framework.exceptions import APIException
 
 
@@ -18,6 +20,23 @@ SAFE_PROVIDER_ERROR_TYPES = {
     'invalid_access_token', 'invalid_credentials', 'invalid_token', 'not_found',
     'PA_UNAUTHORIZED_RESULT_FROM_POLICIES', 'service_unavailable',
     'too_many_requests', 'unauthorized', 'unprocessable_entity', 'validation_error',
+}
+SAFE_SUBSCRIPTION_FIELDS = {
+    'payer_email', 'reason', 'external_reference', 'auto_recurring',
+    'auto_recurring.frequency', 'auto_recurring.frequency_type',
+    'auto_recurring.transaction_amount', 'auto_recurring.currency_id',
+    'back_url', 'status',
+}
+# Translate known provider messages into fixed diagnostics. Never log provider prose.
+SAFE_PROVIDER_MESSAGES = {
+    'both payer and collector must be real or test users': 'buyer_seller_environment_mismatch',
+    'payer and collector must be different': 'buyer_seller_must_be_distinct',
+    'payer email is invalid': 'invalid_buyer_email',
+    'payer not found': 'buyer_not_found',
+    'invalid access token': 'invalid_access_token',
+    'unauthorized': 'unauthorized',
+    'forbidden': 'forbidden',
+    'bad request': 'bad_request',
 }
 
 
@@ -30,10 +49,10 @@ class MercadoPagoError(APIException):
     status_code = 502
     default_detail = 'Não foi possível confirmar a operação com o Mercado Pago.'
 
-    def __init__(self, remote_status=None, *, error_type=None, operation='validation'):
+    def __init__(self, remote_status=None, *, error_type=None, operation='validation', diagnostics=''):
         self.remote_status = remote_status
         if error_type is not None:
-            logger.warning('Mercado Pago: operation=%s http_status=%s error_type=%s', operation, remote_status, error_type)
+            logger.warning('Mercado Pago: operation=%s http_status=%s error_type=%s%s', operation, remote_status, error_type, diagnostics)
         super().__init__()
 
 
@@ -42,20 +61,58 @@ class NoRedirects(HTTPRedirectHandler):
         return None
 
 
-def provider_error_type(error):
+def provider_error_code(value):
+    if isinstance(value, str) and value in SAFE_PROVIDER_ERROR_TYPES:
+        return value
+    if type(value) is int and 100 <= value <= 599:
+        return value
+    return None
+
+
+def provider_error_details(error):
+    fallback = ('upstream_http_error', '')
     try:
         with error:
             payload = json.loads(error.read(8192))
     except (HTTPException, OSError, ValueError):
-        return 'upstream_http_error'
-    if isinstance(payload, dict):
-        for name in ('error', 'code', 'type'):
-            value = payload.get(name)
-            if isinstance(value, str) and value in SAFE_PROVIDER_ERROR_TYPES:
-                return value
-            if name == 'code' and type(value) is int and 100 <= value <= 599:
-                return value
-    return 'upstream_http_error'
+        return fallback
+    if not isinstance(payload, dict):
+        return fallback
+
+    error_type = next(
+        (code for name in ('error', 'code', 'type') if (code := provider_error_code(payload.get(name))) is not None),
+        fallback[0],
+    )
+    details = []
+    body_status = payload.get('status')
+    if type(body_status) is int and 100 <= body_status <= 599:
+        details.append(f'body_status={body_status}')
+
+    causes = payload.get('cause')
+    if isinstance(causes, dict):
+        causes = [causes]
+    fields, messages, cause_codes = set(), set(), set()
+    for item in [payload, *(causes if isinstance(causes, list) else [])]:
+        if not isinstance(item, dict):
+            continue
+        for name in ('field', 'parameter'):
+            field = item.get(name)
+            if isinstance(field, str) and field in SAFE_SUBSCRIPTION_FIELDS:
+                fields.add(field)
+        for name in ('message', 'description'):
+            message = item.get(name)
+            if isinstance(message, str):
+                diagnostic = SAFE_PROVIDER_MESSAGES.get(message.strip().lower().rstrip('.'))
+                if diagnostic:
+                    messages.add(diagnostic)
+        if item is not payload:
+            code = provider_error_code(item.get('code'))
+            if code is not None:
+                cause_codes.add(str(code))
+    for label, values in (('fields', fields), ('messages', messages), ('cause_codes', cause_codes)):
+        if values:
+            details.append(f'{label}={",".join(sorted(values))}')
+    return error_type, ''.join(f' {detail}' for detail in details)
 
 
 def configuration_blockers():
@@ -68,8 +125,13 @@ def configuration_blockers():
         blockers.append('webhook_secret_missing')
     if not settings.MP_TEST_SELLER_ID.isdecimal():
         blockers.append('test_seller_invalid')
-    if not settings.MP_TEST_BUYER_EMAIL.endswith('@testuser.com'):
+    try:
+        validate_email(settings.MP_TEST_BUYER_EMAIL)
+    except ValidationError:
         blockers.append('test_buyer_invalid')
+    else:
+        if not settings.MP_TEST_BUYER_EMAIL.endswith('@testuser.com'):
+            blockers.append('test_buyer_invalid')
     try:
         back_url = urlsplit(settings.MP_BACK_URL)
         valid_back_url = back_url.scheme == 'https' and back_url.hostname and not back_url.username
@@ -113,7 +175,8 @@ def request_mp(path, method='GET', body=None, *, identity=False):
             status = response.status
             data = json.load(response)
     except HTTPError as error:
-        raise MercadoPagoError(error.code, error_type=provider_error_type(error), operation=operation) from None
+        error_type, diagnostics = provider_error_details(error)
+        raise MercadoPagoError(error.code, error_type=error_type, operation=operation, diagnostics=diagnostics) from None
     except (HTTPException, OSError) as error:
         reason = error.reason if isinstance(error, URLError) else error
         error_type = 'upstream_timeout' if isinstance(reason, TimeoutError) else 'upstream_transport_error'

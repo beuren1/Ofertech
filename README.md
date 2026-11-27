@@ -313,9 +313,16 @@ e os créditos pagos só são liberados depois da confirmação da cobrança rec
 | --- | --- |
 | `MP_ACCESS_TOKEN` | Access Token da aplicação da vendedora de teste |
 | `MP_TEST_SELLER_ID` | User ID da vendedora de teste |
-| `MP_TEST_BUYER_EMAIL` | E-mail da compradora de teste |
+| `MP_TEST_BUYER_EMAIL` | E-mail confirmado na conta compradora de teste, como consta no perfil da conta |
 | `MP_WEBHOOK_SECRET` | Assinatura secreta da configuração de webhooks |
 | `MP_BACK_URL` | URL HTTPS da página `/plans` do frontend de teste |
+
+Em caso de erro, confira no log do backend se a operação foi `seller_identity`
+ou `create_subscription`. A primeira consulta o titular do token e exige
+que o ID configurado corresponda ao vendedor de teste. A segunda chama
+`POST /preapproval` e registra códigos e campos reconhecidos na rejeição.
+Use duas contas de teste brasileiras distintas. Confirme o e-mail no perfil
+do comprador e use o mesmo endereço no login da Ofertech.
 
 O cancelamento interrompe as cobranças recorrentes e preserva o saldo do ciclo
 já pago até a expiração. Na ausência de uma renovação confirmada, o usuário
