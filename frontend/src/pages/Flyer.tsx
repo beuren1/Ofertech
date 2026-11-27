@@ -423,14 +423,16 @@ export function FlyerPageEditor({ printMode = false, videoMode = false, initialS
                   editDesign({ backgroundImage: await loadFlyerBackground(url) })
                 })} />}
                 {design[key] && <button type="button" className="text-sm font-semibold text-indigo-600 dark:text-indigo-300" onClick={() => editDesign({ [key]: '' })}>Remover {label.toLowerCase()}</button>}
+                {key === 'logo' && design.logo && <>
+                  <Field label="Tamanho do logotipo">
+                    <input type="range" className="mt-1 block w-full" min={50} max={160} value={design.logoScale ?? 100}
+                      onChange={event => editDesign({ logoScale: event.target.valueAsNumber })} />
+                  </Field>
+                  <ProductCutout key={design.logo} url={design.logo} buttonLabel="Remover fundo do logotipo"
+                    onApply={async file => editDesign({ logo: await prepareFlyerImage(file, size, limit) })} />
+                </>}
               </div>,
             )}
-            {design.logo && <Field label="Tamanho do logotipo">
-              <input type="range" className="mt-1 block w-full" min={50} max={160} value={design.logoScale ?? 100}
-                onChange={event => editDesign({ logoScale: event.target.valueAsNumber })} />
-            </Field>}
-            {design.logo && <ProductCutout key={design.logo} url={design.logo} buttonLabel="Remover fundo do logotipo"
-              onApply={async file => editDesign({ logo: await prepareFlyerImage(file, 360, 66000) })} />}
             {documentMode && <label className="flex items-center gap-2 text-sm font-medium">
               <input type="checkbox" checked={design.grouped} onChange={event => editDesign({ grouped: event.target.checked })} /> Separar páginas por categoria
             </label>}

@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, expect, it, vi } from 'vitest'
 import { apiRequest } from '../auth'
@@ -12,7 +12,31 @@ vi.mock('../auth', () => ({
 
 afterEach(() => {
   cleanup()
+  vi.clearAllMocks()
   vi.unstubAllGlobals()
+})
+
+it('collapses the desktop sidebar and reopens it without resetting the editor', async () => {
+  const setItem = vi.fn()
+  vi.stubGlobal('localStorage', { getItem: vi.fn(), setItem })
+  vi.mocked(apiRequest).mockResolvedValue({ credits: 10 })
+  render(<MemoryRouter><DashboardLayout><input aria-label="Rascunho" /></DashboardLayout></MemoryRouter>)
+
+  const draft = screen.getByRole<HTMLInputElement>('textbox', { name: 'Rascunho' })
+  const workspace = screen.getByRole('main').parentElement
+  fireEvent.change(draft, { target: { value: 'Minha oferta' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Recolher barra lateral' }))
+  const expand = screen.getByRole('button', { name: 'Expandir barra lateral' })
+  expect(expand.getAttribute('aria-expanded')).toBe('false')
+  expect(workspace?.classList.contains('lg:pl-64')).toBe(false)
+  expect(setItem).toHaveBeenCalledWith('sidebar', 'collapsed')
+
+  fireEvent.click(expand)
+  expect(screen.getByRole('button', { name: 'Recolher barra lateral' }).getAttribute('aria-expanded')).toBe('true')
+  expect(workspace?.classList.contains('lg:pl-64')).toBe(true)
+  expect(screen.getByRole('textbox', { name: 'Rascunho' })).toBe(draft)
+  expect(draft.value).toBe('Minha oferta')
+  await screen.findByRole('link', { name: '10 créditos' })
 })
 
 it('links to plans and refreshes the displayed balance only after credit confirmation', async () => {

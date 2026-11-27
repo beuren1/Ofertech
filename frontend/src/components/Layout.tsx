@@ -2,7 +2,8 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import { Link, NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, WandSparkles, Library, History, CreditCard, Settings,
-  Moon, Sun, Menu, X, Sparkles, LogOut, Store, Newspaper, Printer, Video, Coins
+  Moon, Sun, Menu, X, Sparkles, LogOut, Store, Newspaper, Printer, Video, Coins,
+  PanelLeftClose, PanelLeftOpen
 } from 'lucide-react'
 import { apiRequest, useAuth } from '../auth'
 import { CREDIT_BALANCE_CHANGED, type Billing } from '../billing'
@@ -34,6 +35,8 @@ export function useDashboardCredits() {
 export function DashboardLayout({ children }: { children: ReactNode }) {
   const [dark, setDark] = useState(() => localStorage.getItem('theme') === 'dark')
   const [open, setOpen] = useState(false)
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem('sidebar') === 'collapsed')
+  const sidebarAction = collapsed ? 'Expandir barra lateral' : 'Recolher barra lateral'
   const navigate = useNavigate()
   const { user, accessToken, logout, error } = useAuth()
   const userId = user?.id
@@ -76,10 +79,19 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
     localStorage.setItem('theme', dark ? 'dark' : 'light')
   }, [dark])
 
+  useEffect(() => {
+    localStorage.setItem('sidebar', collapsed ? 'collapsed' : 'expanded')
+  }, [collapsed])
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
-      <aside className={`fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-slate-200 bg-white transition-transform dark:border-slate-800 dark:bg-slate-900 lg:translate-x-0 ${open ? 'translate-x-0' : '-translate-x-full'}`}>
-        <div className="flex h-20 shrink-0 items-center justify-between px-6">
+      <button type="button" aria-label={sidebarAction} title={sidebarAction} aria-expanded={!collapsed} aria-controls="workspace-sidebar"
+        onClick={() => setCollapsed(value => !value)}
+        className="fixed left-4 top-5 z-50 hidden h-10 w-10 place-items-center rounded-xl text-indigo-700 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950 lg:grid">
+        {collapsed ? <PanelLeftOpen size={21} aria-hidden="true" /> : <PanelLeftClose size={21} aria-hidden="true" />}
+      </button>
+      <aside id="workspace-sidebar" className={`fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-slate-200 bg-white motion-safe:transition-transform dark:border-slate-800 dark:bg-slate-900 ${open ? 'visible translate-x-0' : 'invisible -translate-x-full'} ${collapsed ? 'lg:invisible lg:-translate-x-full' : 'lg:visible lg:translate-x-0'}`}>
+        <div className="flex h-20 shrink-0 items-center justify-between px-6 lg:pl-16">
           <BrandLink />
           <button className="lg:hidden" onClick={() => setOpen(false)} aria-label="Fechar menu"><X /></button>
         </div>
@@ -100,9 +112,9 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
         </nav>
       </aside>
       {open && <button aria-label="Fechar menu" className="fixed inset-0 z-30 bg-slate-950/30 lg:hidden" onClick={() => setOpen(false)} />}
-      <div className="lg:pl-64">
+      <div className={collapsed ? '' : 'lg:pl-64'}>
         <header className="sticky top-0 z-20 flex h-20 items-center justify-between border-b border-slate-200 bg-white/90 px-4 backdrop-blur dark:border-slate-800 dark:bg-slate-950/90 sm:px-8">
-          <button className="rounded-lg p-2 lg:hidden" onClick={() => setOpen(true)} aria-label="Abrir menu"><Menu /></button>
+          <button className="rounded-lg p-2 lg:hidden" onClick={() => setOpen(true)} aria-label="Abrir menu" aria-expanded={open} aria-controls="workspace-sidebar"><Menu /></button>
           <div className="ml-auto flex items-center gap-2">
             {user && <Link to="/plans" title="Ver planos"
               className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-2.5 text-sm font-semibold text-indigo-700 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950 dark:text-indigo-200 dark:hover:bg-indigo-900">
