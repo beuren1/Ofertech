@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowRight, Check, Layers, Newspaper, Pause, Play, Printer, Quote, Store, Video, WandSparkles } from 'lucide-react'
-import { BrandFooter, BrandLink, BRAND, BRAND_DESCRIPTION, SLOGAN } from '../components/Brand'
+import { ArrowRight, Check, Layers, Newspaper, Pause, Play, Printer, Quote, Smartphone, Store, Tag, Tv, Utensils, Video, WandSparkles } from 'lucide-react'
+import { BrandFooter, BrandLink, BRAND, SLOGAN } from '../components/Brand'
 
 const promotions = [
   ['01_supermercado_alimentos', 'Promoção de alimentos de supermercado'],
@@ -17,13 +17,18 @@ const features = [
   { to: '/flyers', icon: Newspaper, title: 'Encartes de ofertas', text: 'Organize produtos por categoria, escolha um dos 10 fundos prontos e arraste textos e imagens na prévia.' },
   { to: '/print', icon: Printer, title: 'Cartazes e etiquetas', text: 'Monte cartazes em A3, A4 ou A5 com fundo até as bordas. Ajuste as medidas e as cópias das etiquetas para impressão.' },
   { to: '/videos', icon: Video, title: 'Vídeos para TV da loja', text: 'Monte uma sequência animada de ofertas, ajuste a duração de cada produto e reproduza o vídeo em loop.' },
+  { to: '/labels', icon: Tag, title: 'Etiquetas de preço', text: 'Personalize os tamanhos e monte folhas A4 com preços por unidade, quilo ou litro. Inclua EAN-13 e QR Code.' },
+  { to: '/stories', icon: Smartphone, title: 'Stories promocionais', text: 'Crie artes verticais para Instagram, Facebook e WhatsApp. Importe um CSV para preparar várias ofertas de uma vez.' },
+  { to: '/menus', icon: Utensils, title: 'Cardápios digitais e impressos', text: 'Organize pratos, bebidas e combos. Imprima em A4 ou publique um cardápio digital com link e QR Code.' },
+  { to: '/tv', icon: Tv, title: 'TV de Ofertas', text: 'Monte uma playlist e crie um link para cada TV. Atualize as ofertas pelo painel enquanto as telas reproduzem em loop.' },
   { to: '/store', icon: Store, title: 'Identidade da sua loja', text: 'Use seu nome, logotipo e cores nas peças. Salve os projetos para voltar a editar quando precisar.' },
 ] as const
 
 const comments = [
-  { shop: 'Mercado de bairro', text: 'Monto o encarte da semana e reaproveito o projeto quando chegam ofertas novas.' },
-  { shop: 'Loja de roupas', text: 'Gostei de usar as cores e o logo da loja nos banners. As promoções ficam com a cara da nossa marca.' },
-  { shop: 'Loja de eletrônicos', text: 'Importar a lista de produtos ajuda muito quando preciso preparar várias ofertas de uma vez.' },
+  { shop: 'Mercadinho Vale do Ipê', text: 'Monto o encarte da semana e reaproveito o projeto quando chegam ofertas novas.' },
+  { shop: 'Vitrine Flor de Linho', text: 'Gostei de usar as cores e o logo da loja nos banners. As promoções ficam com a cara da nossa marca.' },
+  { shop: 'Ponto do Circuito', text: 'Importar a lista de produtos ajuda muito quando preciso preparar várias ofertas de uma vez.' },
+  { shop: 'Café Varanda do Cedro', text: 'Coloquei o QR Code nas mesas e atualizo os preços do cardápio pelo painel. Também consigo trocar as ofertas na TV.' },
 ] as const
 
 function ShopComments() {
@@ -39,8 +44,7 @@ function ShopComments() {
 
   return (
     <section aria-labelledby="shop-comments" className="px-6 py-16 text-center sm:py-20">
-      <h2 id="shop-comments" className="text-3xl font-black">A Ofertech no dia a dia da loja</h2>
-      <p className="mt-3 text-sm text-slate-600">Comentários ilustrativos</p>
+      <h2 id="shop-comments" className="text-3xl font-black">Comentários de lojistas</h2>
       <div className="mx-auto mt-7 max-w-2xl" onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
         <div aria-live={playing ? 'off' : 'polite'} className="grid">
           {comments.map(({ shop, text }, index) => (
@@ -65,6 +69,7 @@ function ShopComments() {
           </button>
         </div>
       </div>
+      <p className="mt-3 text-sm text-slate-600">Nomes e relatos fictícios.</p>
     </section>
   )
 }
@@ -117,7 +122,7 @@ export function LandingPage() {
         <section className="mx-auto grid max-w-7xl items-center gap-10 px-6 py-20 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.08fr)] lg:py-28">
           <div>
             <h1 className="max-w-3xl text-5xl font-black leading-[1.05] tracking-tight sm:text-6xl">{SLOGAN}</h1>
-            <p className="mt-6 max-w-xl text-lg leading-8 text-slate-600">{BRAND_DESCRIPTION}</p>
+            <p className="mt-6 max-w-xl text-lg leading-8 text-slate-600">Crie banners, encartes, cartazes, etiquetas e stories para sua loja. Publique cardápios e mantenha as ofertas rodando na TV pelo mesmo painel.</p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row"><Link to="/generator" className="flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-6 py-3.5 font-bold text-white shadow-xl shadow-indigo-200">Criar minha primeira arte <ArrowRight size={18} /></Link><Link to="/templates" className="rounded-xl border border-slate-200 px-6 py-3.5 text-center font-bold">Ver exemplos</Link></div>
             <div className="mt-7 flex flex-wrap gap-x-5 gap-y-2 text-sm text-slate-600"><span className="flex items-center gap-1.5"><Check size={16} className="text-emerald-600" /> Cadastro sem cartão</span><span className="flex items-center gap-1.5"><Check size={16} className="text-emerald-600" /> 10 créditos grátis por mês</span></div>
           </div>

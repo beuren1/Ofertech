@@ -29,14 +29,17 @@ describe('Ofertech', () => {
       ['Banners promocionais', '/generator'], ['Criação em massa', '/bulk'],
       ['Encartes de ofertas', '/flyers'], ['Cartazes e etiquetas', '/print'],
       ['Vídeos para TV da loja', '/videos'], ['Identidade da sua loja', '/store'],
+      ['Etiquetas de preço', '/labels'], ['Stories promocionais', '/stories'],
+      ['Cardápios digitais e impressos', '/menus'], ['TV de Ofertas', '/tv'],
     ]) {
       expect(screen.getByRole('link', { name }).getAttribute('href')).toBe(path)
     }
-    expect(screen.getByText('Comentários ilustrativos')).toBeTruthy()
-    const comment = screen.getByRole('button', { name: 'Ver comentário de loja de roupas' })
+    expect(screen.getByRole('heading', { name: 'Comentários de lojistas' })).toBeTruthy()
+    expect(screen.getByText('Nomes e relatos fictícios.')).toBeTruthy()
+    const comment = screen.getByRole('button', { name: 'Ver comentário de vitrine flor de linho' })
     fireEvent.click(comment)
     expect(comment.getAttribute('aria-pressed')).toBe('true')
-    expect(screen.getByRole('figure').textContent).toContain('Loja de roupas')
+    expect(screen.getByRole('figure').textContent).toContain('Vitrine Flor de Linho')
     expect(document.title).toBe('Ofertech | Sua oferta merece destaque.')
     expect(screen.getByRole('contentinfo').textContent).toContain('Ofertech')
   })
