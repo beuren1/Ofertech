@@ -68,7 +68,8 @@ def customer_for(account, data):
         raise ValidationError('Informe o nome e o CPF ou CNPJ do pagador.')
     reference = 'ofertech-customer-' + salted_hmac('asaas-customer', str(account.user_id)).hexdigest()
     customer = asaas.find_by_reference('/customers', reference)
-    if customer is None:
+    creating = customer is None
+    if creating:
         try:
             customer = asaas.request('/customers', 'POST', {
                 'name': data['name'], 'cpfCnpj': data['document'],
@@ -80,6 +81,7 @@ def customer_for(account, data):
             raise
     customer_id = customer.get('id')
     if not asaas.resource_id(customer_id, 'cus') or customer.get('externalReference') != reference:
+        asaas.log_failure('POST /customers' if creating else 'GET /customers', 'unexpected_customer')
         raise asaas.AsaasError()
     return customer_id
 
@@ -116,6 +118,7 @@ def start_order(user, plan, data):
     try:
         validate_payment(order, payment, payment.get('id'))
     except asaas.AsaasError:
+        asaas.log_failure('POST /payments', 'unexpected_payment')
         return PixOrder.objects.get(pk=order.pk)
     with billing_account(user, refresh_allowance=False) as account:
         order.refresh_from_db()

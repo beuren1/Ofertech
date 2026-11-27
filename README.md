@@ -371,6 +371,21 @@ no fuso da aplicação, sem renovação automática.
   O nome e o documento informados no checkout são encaminhados ao Asaas
   para o cadastro do pagador.
 
+### Diagnosticar falhas na criação do Pix
+
+Nos logs do backend no Render, procure `asaas.request_failed` no horário
+da tentativa. A linha identifica `GET /customers` (busca do pagador),
+`POST /customers` (cadastro) ou `POST /payments` (emissão), o status HTTP
+do Asaas e os códigos técnicos conhecidos. `transport_error` indica falha
+de comunicação e `unexpected_customer` indica uma resposta de cadastro ou
+busca que não pôde ser vinculada com segurança. O log registra códigos
+desconhecidos como `unrecognized_code` e descarta descrições e dados pessoais.
+
+Para `401`, confira no Render a chave ativa do Sandbox, com o prefixo
+`$aact_hmlg_` completo e o `$` literal. Para `403`, confira as permissões
+e a lista de IPs autorizados da conta Asaas. [Autenticação Asaas](https://docs.asaas.com/docs/autentica%C3%A7%C3%A3o-1) ·
+[Códigos HTTP do Asaas](https://docs.asaas.com/reference/codigos-http-das-respostas)
+
 ## Mercado Pago em teste
 
 A Ofertech mantém o checkout hospedado de assinaturas no ambiente de teste

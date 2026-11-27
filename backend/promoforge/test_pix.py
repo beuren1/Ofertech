@@ -1,6 +1,8 @@
+import json
 from datetime import timedelta
+from io import BytesIO
 from unittest.mock import patch
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 from uuid import uuid4
 
 from django.contrib.auth import get_user_model
@@ -283,6 +285,33 @@ class PixCheckoutTests(TestCase):
         change.refresh_from_db()
         self.assertEqual(change.status, 'authorized')
 
+    @patch('promoforge.pix_views.take_or_throttle')
+    def test_provider_http_errors_keep_customer_and_payment_failures_distinct(self, _throttle):
+        self.assertEqual(self.client.get('/api/billing/').data['credits'], 10)
+        for operation in (('/customers', 'GET'), ('/customers', 'POST'), ('/payments', 'POST')):
+            for status in (400, 401, 403, 422, 500):
+                with self.subTest(operation=operation, status=status):
+                    def failing_provider(path, method='GET', data=None, *, query=None):
+                        if (path, method) == operation:
+                            raise asaas.AsaasError(status)
+                        return self.provider(path, method, data, query=query)
+
+                    key = uuid4()
+                    with patch('promoforge.asaas.request', side_effect=failing_provider):
+                        response = self.create(key=key)
+                    order = PixOrder.objects.filter(pk=order_id_for(self.user, key)).first()
+                    if operation[0] == '/customers':
+                        expected = 400 if operation[1] == 'POST' and status in {400, 422} else 502
+                        self.assertEqual(response.status_code, expected)
+                        self.assertIsNone(order)
+                    else:
+                        self.assertEqual(response.status_code, 202)
+                        self.assertEqual(order.status, 'processing' if status == 500 else 'rejected')
+                        self.assertEqual(order.open, status == 500)
+                    self.assertEqual(self.account().plan_id, 'free')
+                    self.assertEqual(self.account().credits, 10)
+                    self.assertFalse(CreditMovement.objects.filter(key__startswith='pix:').exists())
+
 
 @override_settings(ASAAS_API_KEY='test-key', ASAAS_WEBHOOK_TOKEN=TOKEN)
 class AsaasTransportTests(TestCase):
@@ -303,3 +332,41 @@ class AsaasTransportTests(TestCase):
             args, kwargs = opener.return_value.open.call_args
             self.assertEqual(args[0].full_url, 'https://api-sandbox.asaas.com/v3/payments')
             self.assertEqual(kwargs['timeout'], 5)
+
+    @override_settings(ASAAS_ENVIRONMENT='sandbox', ASAAS_API_KEY='$aact_prod_fake')
+    def test_production_key_is_blocked_in_sandbox(self):
+        with patch('promoforge.asaas.build_opener') as opener:
+            with self.assertRaises(asaas.AsaasUnavailable):
+                asaas.request('/customers')
+            opener.assert_not_called()
+
+    @override_settings(ASAAS_ENVIRONMENT='sandbox', ASAAS_API_KEY='$aact_hmlg_fake')
+    def test_http_error_logs_only_allowlisted_codes_and_static_operation(self):
+        codes = {400: 'invalid_value', 401: 'invalid_environment', 403: 'forbidden',
+                 422: 'invalid_object', 500: 'internal_error'}
+        for path, payload in (
+            ('/customers', {'name': 'Buyer Private', 'cpfCnpj': '24971563792'}),
+            ('/payments', {'customer': 'cus_secret', 'billingType': 'PIX', 'value': 19.99, 'dueDate': '2026-11-28'}),
+        ):
+            for status, code in codes.items():
+                with self.subTest(path=path, status=status), patch('promoforge.asaas.build_opener') as opener:
+                    body = json.dumps({'errors': [
+                        {'code': code, 'description': 'Buyer Private private@example.test'},
+                        {'code': '24971563792'},
+                        {'code': '$aact_hmlg_fake'},
+                    ]}).encode()
+                    opener.return_value.open.side_effect = HTTPError(path, status, 'private', {}, BytesIO(body))
+                    with self.assertLogs('promoforge.asaas', 'WARNING') as logs, self.assertRaises(asaas.AsaasError) as error:
+                        asaas.request(path, 'POST', payload)
+                    self.assertEqual(error.exception.remote_status, status)
+                    request = opener.return_value.open.call_args.args[0]
+                    self.assertEqual(request.full_url, 'https://api-sandbox.asaas.com/v3' + path)
+                    self.assertEqual(request.get_header('Access_token'), '$aact_hmlg_fake')
+                    self.assertEqual(request.get_header('User-agent'), 'Ofertech/1.0')
+                    self.assertEqual(request.get_header('Content-type'), 'application/json')
+                    self.assertEqual(json.loads(request.data), payload)
+                    log = logs.output[0]
+                    self.assertIn(f'operation=POST {path} failure=http_error upstream_status={status}', log)
+                    self.assertIn(f'codes={code},unrecognized_code', log)
+                    for private in ('Buyer Private', 'private@example.test', '24971563792', '$aact_hmlg_fake', 'cus_secret', '19.99'):
+                        self.assertNotIn(private, log)
