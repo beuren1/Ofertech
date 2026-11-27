@@ -6,6 +6,7 @@ import { bannerPdf } from '../flyerExport'
 import { CheckCircle2, ImagePlus, Sparkles, Upload } from 'lucide-react'
 import { apiBlobRequest, apiRequest, apiUpload, getErrorMessage, useAuth } from '../auth'
 import { useCreationLogin } from '../creationLogin'
+import { findGalleryModel } from '../galleryModels'
 import {
   campaignAssetContentPath,
   campaignThumbnailContentPath,
@@ -246,11 +247,12 @@ function ProductRow({
   )
 }
 
-export function BulkPage() {
+export function BulkPage({ initialSearch = '' }: { initialSearch?: string } = {}) {
   const [searchParams, setSearchParams] = useSearchParams()
+  const [model] = useState(() => findGalleryModel('/bulk', initialSearch))
   const [fileName, setFileName] = useState('')
-  const [products, setProducts] = useState<BulkProduct[]>([])
-  const [requestedCount, setCount] = useState(24)
+  const [products, setProducts] = useState<BulkProduct[]>(() => model?.products ?? [])
+  const [requestedCount, setCount] = useState(() => model?.products.length ?? 24)
   const [parsing, setParsing] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [progress, setProgress] = useState(0)
@@ -262,7 +264,7 @@ export function BulkPage() {
   const [activeArtId, setActiveArtId] = useState<string | null>(null)
   const [batchId, setBatchId] = useState<string | null>(null)
   const [campaignId, setCampaignId] = useState<number | null>(null)
-  const [campaignName, setCampaignName] = useState('Nova campanha')
+  const [campaignName, setCampaignName] = useState(() => model?.name ?? 'Nova campanha')
   const [restoring, setRestoring] = useState(false)
   const [zipBusy, setZipBusy] = useState(false)
   const [zipError, setZipError] = useState<string | null>(null)
@@ -651,7 +653,8 @@ export function BulkPage() {
     const generated: ArtworkItem[] = pending?.generated ?? []
     for (let index = generated.length; index < selectedProducts.length; index += 1) {
       const product = selectedProducts[index]
-      const config = createArtworkConfig(product, index)
+      const defaults = createArtworkConfig(product, index)
+      const config = model ? { ...changeArtworkTemplate(product, defaults, model.artwork, index), callout: model.name } : defaults
       try {
         const result = await renderArtworkBlob(product, config, 'png')
         const signature = Array.from(new Uint8Array(await result.blob.slice(0, 8).arrayBuffer()))

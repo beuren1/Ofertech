@@ -59,6 +59,7 @@ export type FlyerProduct = Required<Pick<BulkProduct, 'name' | 'category' | 'pri
   discountTextColor?: string
   oldPriceColor?: string
   textPositions?: FlyerTextPositions
+  cardPosition?: { x: number; y: number }
   lockedLayers?: FlyerLayer[]
 }
 export type Flyer = { name: string; design: FlyerDesign; products: FlyerProduct[] }
@@ -562,7 +563,7 @@ function drawPrintPage(
 }
 
 export async function renderFlyerPage(canvas: HTMLCanvasElement, page: FlyerPage, design: FlyerDesign, index: number, total: number, scale = 1,
-  onLayer?: (product: FlyerProduct, bounds: FlyerPhotoBounds, layer?: FlyerLayer) => void,
+  onLayer?: (product: FlyerProduct, bounds: FlyerPhotoBounds, layer?: FlyerLayer | 'product') => void,
   onDesignLayer?: (layer: FlyerDesignLayer, bounds: FlyerPhotoBounds) => void,
 ) {
   const [logo, background, ...photos] = await Promise.all(
@@ -652,14 +653,20 @@ export async function renderFlyerPage(canvas: HTMLCanvasElement, page: FlyerPage
   const hasFeatured = !single && Boolean(page.products[0]?.featured)
   const { cols, rows } = flyerGrid(design.layout, design.arrangement, hasFeatured, page.products.length)
   const gap = 20
+  const productArea = { x: 44, y: startY, width: width - 88, height: height - 85 - startY }
   const columnWidth = (width - 88 - (cols - 1) * gap) / cols
   const tileH = single ? height - 85 - startY : (height - 85 - startY - (rows - 1) * gap) / rows
   page.products.forEach((product, position) => {
     const featured = hasFeatured && position === 0
     const slot = position + Number(hasFeatured && !featured)
     const tileW = single ? width - 88 : featured ? columnWidth * 2 + gap : columnWidth
-    const x = 44 + (slot % cols) * (columnWidth + gap)
-    const y = startY + Math.floor(slot / cols) * (tileH + gap)
+    const bounds = flyerTextBounds(productArea, {
+      x: 44 + (slot % cols) * (columnWidth + gap),
+      y: startY + Math.floor(slot / cols) * (tileH + gap),
+      width: tileW, height: tileH,
+    }, single ? undefined : product.cardPosition)
+    const { x, y } = bounds.image
+    if (!single) onLayer?.(product, canvasBounds(bounds), 'product')
     const radius = grocery || pharmacy ? 24 : fashion || flash ? 3 : 12
     const borderWidth = featured || design.border === 'strong' ? 6 : design.border === 'thin' ? 2 : 0
     if (professional) {

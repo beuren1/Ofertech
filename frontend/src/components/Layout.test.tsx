@@ -16,7 +16,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-it('collapses the desktop sidebar and reopens it without resetting the editor', async () => {
+it('keeps the sidebar icons available in compact mode without resetting the editor', async () => {
   const setItem = vi.fn()
   vi.stubGlobal('localStorage', { getItem: vi.fn(), setItem })
   vi.mocked(apiRequest).mockResolvedValue({ credits: 10 })
@@ -28,12 +28,17 @@ it('collapses the desktop sidebar and reopens it without resetting the editor', 
   fireEvent.click(screen.getByRole('button', { name: 'Recolher barra lateral' }))
   const expand = screen.getByRole('button', { name: 'Expandir barra lateral' })
   expect(expand.getAttribute('aria-expanded')).toBe('false')
-  expect(workspace?.classList.contains('lg:pl-64')).toBe(false)
+  expect(workspace?.classList.contains('lg:pl-20')).toBe(true)
+  const posters = screen.getByRole('link', { name: 'Criar Cartaz' })
+  expect(posters.getAttribute('href')).toBe('/print')
+  expect(posters.getAttribute('title')).toBe('Criar Cartaz')
+  expect(posters.querySelector('span')?.classList.contains('lg:sr-only')).toBe(true)
   expect(setItem).toHaveBeenCalledWith('sidebar', 'collapsed')
 
   fireEvent.click(expand)
   expect(screen.getByRole('button', { name: 'Recolher barra lateral' }).getAttribute('aria-expanded')).toBe('true')
   expect(workspace?.classList.contains('lg:pl-64')).toBe(true)
+  expect(posters.querySelector('span')?.classList.contains('lg:sr-only')).toBe(false)
   expect(screen.getByRole('textbox', { name: 'Rascunho' })).toBe(draft)
   expect(draft.value).toBe('Minha oferta')
   await screen.findByRole('link', { name: '10 créditos' })

@@ -1,9 +1,23 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, expect, it } from 'vitest'
 import { TemplatesPage } from './pages/Templates'
 
 afterEach(cleanup)
+
+it('shows three editable examples in each of the five formats', () => {
+  render(<MemoryRouter><TemplatesPage /></MemoryRouter>)
+  for (const [format, path] of [
+    ['Banners', '/generator'], ['Criação em massa', '/bulk'], ['Encartes', '/flyers'],
+    ['Cartazes', '/print'], ['Vídeos', '/videos'],
+  ]) {
+    const section = screen.getByRole('heading', { name: format }).closest('section')!
+    const links = within(section).getAllByRole('link', { name: /Usar modelo/ })
+    expect(links).toHaveLength(3)
+    expect(new Set(links.map(link => link.getAttribute('href'))).size).toBe(3)
+    expect(links.every(link => link.getAttribute('href')?.startsWith(`${path}?template=`))).toBe(true)
+  }
+})
 
 it('combines category and text filters and opens the applicable flyer preset', () => {
   render(<MemoryRouter><TemplatesPage /></MemoryRouter>)

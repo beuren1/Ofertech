@@ -23,7 +23,7 @@ export function AuthPage({ mode, editorLocation }: { mode: 'login' | 'register';
     try {
       if (register) await createAccount(name, email, password)
       else await login(email, password)
-      navigate(editorLocation ?? '/dashboard', { replace: true })
+      navigate(editorLocation ?? (location.state?.returnToStore ? '/store' : '/dashboard'), { replace: true })
     } catch (reason) {
       setFormError(getErrorMessage(reason))
     } finally {

@@ -7,6 +7,7 @@ import { ProfessionalOfferControls } from '../components/ProfessionalOfferContro
 import { bannerPdf } from '../flyerExport'
 import { apiBlobRequest, apiRequest, apiUpload, getErrorMessage, useAuth } from '../auth'
 import { useCreationLogin } from '../creationLogin'
+import { findGalleryModel } from '../galleryModels'
 import { campaignAssetContentPath, createCampaignThumbnail, toCampaignArtworkSnapshot, type SavedCampaign } from '../campaigns'
 import { readProductImage, saveProductImage } from '../imageStore'
 import {
@@ -94,20 +95,24 @@ function campaignArtwork(product: BulkProduct, config: ArtworkConfig): ArtworkIt
   }
 }
 
-export function GeneratorPage() {
+export function GeneratorPage({ initialSearch = '' }: { initialSearch?: string } = {}) {
+  const model = findGalleryModel('/generator', initialSearch)
   const photoUrl = useRef<string | null>(null)
   const saveInProgress = useRef(false)
   const saveRequested = useRef(false)
   const editRevision = useRef(0)
   const latestCampaignSave = useRef<() => Promise<void>>(async () => {})
-  const [product, setProduct] = useState(initialProduct)
-  const [config, setConfig] = useState<ArtworkConfig>(() => createArtworkConfig(initialProduct, 0))
+  const [product, setProduct] = useState(() => model?.products[0] ?? initialProduct)
+  const [config, setConfig] = useState<ArtworkConfig>(() => {
+    const defaults = createArtworkConfig(product, 0)
+    return model ? { ...changeArtworkTemplate(product, defaults, model.artwork, 0), callout: model.name } : defaults
+  })
   const [selectedElement, setSelectedElement] = useState<ArtElement | null>(null)
   const [discountIsCustom, setDiscountIsCustom] = useState(false)
   const [photoError, setPhotoError] = useState<string | null>(null)
   const [exportError, setExportError] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
-  const [campaignName, setCampaignName] = useState('Nova campanha')
+  const [campaignName, setCampaignName] = useState(() => model?.name ?? 'Nova campanha')
   const [campaignId, setCampaignId] = useState<number | null>(null)
   const [campaignSaveState, setCampaignSaveState] = useState<'idle' | 'dirty' | 'saving' | 'saved' | 'error'>('idle')
   const [campaignSaveError, setCampaignSaveError] = useState<string | null>(null)

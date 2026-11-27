@@ -69,6 +69,88 @@ it('offers posters and labels to free accounts at two credits per page', async (
   await act(async () => {})
 })
 
+it.each([false, true])('preserves both manually added products in the preview and save (print mode: %s)', async printMode => {
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null)
+  const save = vi.fn()
+  vi.mocked(apiRequest).mockImplementation(async (path, options) => {
+    if (path === 'flyers/' && options?.method === 'POST') {
+      save(options.body)
+      return { ...createFlyer(printMode), id: 12, updated_at: 'fixture-time' }
+    }
+    return { results: [], next: null }
+  })
+  render(<FlyerPageEditor printMode={printMode} />)
+
+  for (const [name, price] of [['Café', '20,00'], ['Chá', '15,00']]) {
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar' }))
+    fireEvent.change(screen.getByLabelText('Nome do produto'), { target: { value: name } })
+    fireEvent.change(screen.getByLabelText('Preço promocional'), { target: { value: price } })
+  }
+  expect(screen.getByText('2 produtos no projeto.')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Café' }))
+  expect(screen.getByLabelText<HTMLInputElement>('Preço promocional').value).toBe('20,00')
+
+  if (printMode) {
+    expect(screen.getByRole('option', { name: '2 · Chá' })).toBeTruthy()
+    expect(renderFlyerPage).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      products: [expect.objectContaining({ name: 'Chá' })],
+    }), expect.anything(), 1, 2, expect.anything(), expect.anything(), expect.anything())
+    fireEvent.change(screen.getByLabelText('Geração'), { target: { value: 'single' } })
+    expect(screen.getByRole('option', { name: 'Chá' })).toBeTruthy()
+  } else {
+    expect(renderFlyerPage).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      products: [expect.objectContaining({ name: 'Café' }), expect.objectContaining({ name: 'Chá' })],
+    }), expect.anything(), 0, 1, expect.anything(), expect.anything(), expect.anything())
+  }
+
+  fireEvent.click(screen.getByRole('button', { name: printMode ? 'Salvar projeto' : 'Salvar encarte' }))
+  await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({
+    products: [
+      expect.objectContaining({ name: 'Café', price: '20,00' }),
+      expect.objectContaining({ name: 'Chá', price: '15,00' }),
+    ],
+  })))
+})
+
+it('moves and deletes an individual product from the flyer preview', async () => {
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null)
+  vi.mocked(apiRequest).mockResolvedValue({ results: [], next: null })
+  vi.mocked(renderFlyerPage).mockImplementation(async (_canvas, page, _design, _index, _total, _scale, report) => {
+    page.products.forEach((product, index) => report?.(product, {
+      safe: { x: 0, y: 100, width: 600, height: 700 },
+      image: { x: index * 220, y: 100, width: 200, height: 200 },
+    }, 'product'))
+    return 0
+  })
+  render(<FlyerPageEditor />)
+  for (const name of ['Café', 'Chá']) {
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar' }))
+    fireEvent.change(screen.getByLabelText('Nome do produto'), { target: { value: name } })
+  }
+  await screen.findByRole('button', { name: 'Editar camadas' })
+  const canvas = screen.getByLabelText<HTMLCanvasElement>(/Prévia da página 1/)
+  vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, canvas.width, canvas.height))
+  canvas.setPointerCapture = vi.fn()
+  const pointer = (type: string, x: number, y: number) => fireEvent(canvas, Object.assign(
+    new MouseEvent(type, { clientX: x, clientY: y, button: 0, bubbles: true }), { pointerId: 1 },
+  ))
+  pointer('pointerdown', 80, 150)
+  pointer('pointermove', 120, 200)
+  pointer('pointerup', 120, 200)
+  expect(screen.getByLabelText<HTMLInputElement>('Nome do produto').value).toBe('Café')
+  expect(renderFlyerPage).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+    products: [
+      expect.objectContaining({ name: 'Café', cardPosition: { x: -80, y: -80 } }),
+      expect.not.objectContaining({ cardPosition: expect.anything() }),
+    ],
+  }), expect.anything(), 0, 1, expect.anything(), expect.anything(), expect.anything())
+  fireEvent.click(await screen.findByRole('button', { name: 'Excluir Café da arte' }))
+  expect(screen.queryByRole('button', { name: 'Café' })).toBeNull()
+  expect(screen.getByRole('button', { name: 'Chá' })).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Desfazer' }))
+  expect(screen.getByRole('button', { name: 'Café' })).toBeTruthy()
+})
+
 it('imports CSV and campaign products, edits a price, saves and reopens the project', async () => {
   const designLayers = ['logo', 'storeName', 'subtitle', 'category', 'backgroundImage'] as const
   vi.mocked(renderFlyerPage).mockImplementation(async (_canvas, page, _design, _index, _total, _scale, onPhoto, onDesignLayer) => {

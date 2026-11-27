@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { FileImage, FileText, GripVertical, Plus, Save, Upload } from 'lucide-react'
+import { ChevronDown, FileImage, FileText, GripVertical, Plus, Save, Upload } from 'lucide-react'
 import { apiBlobRequest, apiRequest, getErrorMessage, useAuth } from '../auth'
 import { useCreationLogin } from '../creationLogin'
 import { parseProductCsv } from '../bulk'
@@ -7,6 +7,7 @@ import { campaignAssetContentPath, type SavedCampaign } from '../campaigns'
 import { exportFlyer } from '../flyerExport'
 import { FlyerPreview } from '../components/FlyerPreview'
 import { flyerTemplateImage, flyerTemplates } from '../flyerTemplates'
+import { findGalleryModel } from '../galleryModels'
 import { useFlyerHistory } from '../useFlyerHistory'
 import { PrintControls } from '../components/PrintControls'
 import { FlyerBackgroundCarousel } from '../components/FlyerBackgroundCarousel'
@@ -73,6 +74,7 @@ export function FlyerPageEditor({ printMode = false, videoMode = false, initialS
   const draggedProduct = useRef<number | null>(null)
   const inProgress = useRef(false)
   const appliedLink = useRef(false)
+  const previewPages = useRef<HTMLDivElement>(null)
   const { products, design } = flyer
   const { layout, grouped, print, video } = design
   const documentMode = !printMode && !videoMode
@@ -98,7 +100,8 @@ export function FlyerPageEditor({ printMode = false, videoMode = false, initialS
     const id = params.get('project_id')
     if (id && !accessToken) return
     const template = !printMode && !videoMode ? flyerTemplates.find(([key]) => key === params.get('template')) : undefined
-    if (!id && !template) return
+    const model = findGalleryModel(printMode ? '/print' : videoMode ? '/videos' : '/flyers', initialSearch)
+    if (!id && !template && !model) return
     let active = true
     inProgress.current = true
     setBusy(true)
@@ -113,13 +116,14 @@ export function FlyerPageEditor({ printMode = false, videoMode = false, initialS
         setSelectedProject(String(project.id))
         return
       }
-      if (!template) return
-      const [key, name, , style, title] = template
+      const preset = model ? [model.background, model.name, model.segment, model.flyer, model.name] as const : template
+      if (!preset) return
+      const [key, name, , style, title] = preset
       const backgroundImage = await loadFlyerBackground(flyerTemplateImage(key))
       if (!active) return
-      const draft = createFlyer()
+      const draft = createFlyer(printMode, videoMode)
       const { primary, accent, background, font, border, badge } = FLYER_TEMPLATES[style]
-      resetFlyer({ name, products: [], design: { ...draft.design, template: style, title, primary, accent, background, font, border, badge, backgroundImage } })
+      resetFlyer({ name, products: model?.products.map(flyerProduct) ?? [], design: { ...draft.design, template: style, title, primary, accent, background, font, border, badge, backgroundImage } })
     }
     void openLink().catch(reason => { if (active) setError(getErrorMessage(reason)) }).finally(() => {
       if (active) {
@@ -204,11 +208,17 @@ export function FlyerPageEditor({ printMode = false, videoMode = false, initialS
     }), group)
   }
 
+  function removeProduct(index: number) {
+    setFlyer(current => ({ ...current, products: current.products.filter((_, position) => position !== index) }))
+    setOpenProduct(null)
+  }
+
   function appendProducts(items: FlyerProduct[]) {
     if (!items.length) throw new Error('Nenhum produto foi encontrado.')
     if (products.length + items.length > FLYER_LIMIT) throw new Error(`O projeto aceita até ${FLYER_LIMIT} produtos.`)
     setFlyer(current => ({ ...current, products: [...current.products, ...items] }))
-    setMessage(`${items.length} produto(s) adicionado(s).`)
+    const total = products.length + items.length
+    setMessage(`${total} ${total === 1 ? 'produto no projeto' : 'produtos no projeto'}.`)
   }
 
   async function importCampaign() {
@@ -495,8 +505,13 @@ export function FlyerPageEditor({ printMode = false, videoMode = false, initialS
                       }}
                       onDragEnd={() => { draggedProduct.current = null; setDropTarget(null) }}><GripVertical size={17} aria-hidden /></span>
                     <button type="button" aria-expanded={openProduct === index} className="min-w-0 flex-1 break-words py-2 text-left text-sm font-semibold" onClick={() => setOpenProduct(openProduct === index ? null : index)}>
-                      {product.name || 'Produto sem nome'} {product.category && <span className="font-normal text-slate-500">· {product.category}</span>}
-                      {product.featured && <span className="ml-2 font-semibold text-indigo-600 dark:text-indigo-300">Oferta principal</span>}
+                      <span className="flex items-center justify-between gap-2">
+                        <span>
+                          {product.name || 'Produto sem nome'} {product.category && <span className="font-normal text-slate-500">· {product.category}</span>}
+                          {product.featured && <span className="ml-2 font-semibold text-indigo-600 dark:text-indigo-300">Oferta principal</span>}
+                        </span>
+                        <ChevronDown size={16} aria-hidden="true" className={`shrink-0 ${openProduct === index ? 'rotate-180' : ''}`} />
+                      </span>
                     </button>
                   </div>
                   {openProduct === index && <div className="space-y-3 pb-2">
@@ -629,10 +644,7 @@ export function FlyerPageEditor({ printMode = false, videoMode = false, initialS
                       <button type="button" className={secondary} disabled={!index} onClick={() => moveProduct(index, index - 1)}>Subir</button>
                       <button type="button" className={secondary} disabled={index === products.length - 1} onClick={() => moveProduct(index, index + 1)}>Descer</button>
                       {product.imageUrl && <button type="button" className={secondary} onClick={() => editProduct(index, { imageUrl: '' })}>Remover foto</button>}
-                      <button type="button" className={secondary} onClick={() => {
-                        setFlyer(current => ({ ...current, products: current.products.filter((_, position) => position !== index) }))
-                        setOpenProduct(null)
-                      }}>Excluir produto</button>
+                      <button type="button" className={secondary} onClick={() => removeProduct(index)}>Excluir produto</button>
                     </div>
                   </div>}
                 </div>
@@ -648,10 +660,40 @@ export function FlyerPageEditor({ printMode = false, videoMode = false, initialS
             <span className="text-sm text-slate-600 dark:text-slate-400">{pages.length} {pages.length === 1 ? 'página' : 'páginas'} · {print?.kind === 'poster' ? print.paper : 'A4'}{print && ` · ${paper.width} × ${paper.height} mm`}</span>
           </div>
           {print && <p className="mb-4 text-sm text-slate-600 dark:text-slate-400">Para manter as medidas, imprima o PDF em tamanho real (100%).</p>}
+          {print?.mode === 'single' && products.length > 1 && <p className="mb-4 text-sm text-slate-600 dark:text-slate-400">
+            O modo Individual mostra o produto selecionado em “Produto para impressão”. Para ver todos, escolha “Em massa”.
+          </p>}
           {editablePreview && <label className="mb-4 flex w-fit items-center gap-2 text-sm font-medium"><input type="checkbox" checked={showGuides} onChange={event => setShowGuides(event.target.checked)} /> Guias de alinhamento</label>}
-          <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,260px),1fr))] gap-5">
-            {(pages.length ? pages : printError ? [] : [emptyPage]).map((page, index) => <FlyerPreview key={index} page={page} design={design}
+          {pages.length > 1 && <Field label="Ir para a página" className="mb-4 block">
+            <select className={field} value="" onChange={event => {
+              previewPages.current?.children[Number(event.target.value)]?.scrollIntoView({ block: 'start' })
+            }}>
+              <option value="" disabled>Selecione uma página</option>
+              {pages.map((page, index) => <option key={index} value={index}>
+                {index + 1} · {page.category || page.products[0]?.name || 'Produto sem nome'}
+              </option>)}
+            </select>
+          </Field>}
+          <div ref={previewPages} className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,260px),1fr))] gap-5">
+            {(pages.length ? pages : printError ? [] : [emptyPage]).map((page, index) => <div key={index} className="min-w-0 scroll-mt-24 xl:scroll-mt-0">
+              <FlyerPreview page={page} design={design}
               index={index} total={pages.length} busy={busy} showGuides={showGuides}
+              activeProduct={openProduct === null ? undefined : products[openProduct]}
+              onSelectProduct={documentMode ? product => {
+                const position = products.indexOf(product)
+                if (position >= 0) setOpenProduct(position)
+              } : undefined}
+              onMoveProduct={documentMode ? product => {
+                const position = products.indexOf(product)
+                if (position < 0) return undefined
+                return (adjustment, group) => editProduct(position, {
+                  cardPosition: { x: adjustment.photoX ?? 0, y: adjustment.photoY ?? 0 },
+                }, group)
+              } : undefined}
+              onRemoveProduct={documentMode ? product => {
+                const position = products.indexOf(product)
+                if (position >= 0) removeProduct(position)
+              } : undefined}
               onToggleLock={editablePreview ? (layer) => {
                 if ('designLayer' in layer) {
                   const key = layer.designLayer
@@ -677,7 +719,8 @@ export function FlyerPageEditor({ printMode = false, videoMode = false, initialS
                   textPositions: { ...product.textPositions, [layer]: { x: adjustment.photoX ?? 0, y: adjustment.photoY ?? 0 } },
                 }, group)
               } : undefined}
-              onExport={pages.length ? () => void run(() => download('png', index)) : undefined} />)}
+              onExport={pages.length ? () => void run(() => download('png', index)) : undefined} />
+            </div>)}
           </div>
         </section>}
       </div>

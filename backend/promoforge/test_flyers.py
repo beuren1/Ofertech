@@ -74,6 +74,7 @@ class FlyerProjectTests(APITestCase):
         self.payload['products'][0]['textPositions'] = {
             'name': {'x': -20, 'y': 10}, 'originalPrice': {'x': 0, 'y': 50}, 'offer': {'x': 50, 'y': -50},
         }
+        self.payload['products'][0]['cardPosition'] = {'x': 75, 'y': -30}
         self.payload['products'][0]['glow'] = {'enabled': True, 'color': '#416eff', 'intensity': 200, 'blur': 7}
         response = self.client.post('/api/flyers/', self.payload, format='json')
         self.assertEqual(response.status_code, 201, response.data)

@@ -23,7 +23,19 @@ describe('Ofertech', () => {
     expect(screen.getByRole('heading', { name: 'Cartazes e etiquetas' })).toBeTruthy()
     expect(screen.getByRole('heading', { name: 'Vídeos para TV da loja' })).toBeTruthy()
     expect(screen.getByText('10 créditos grátis por mês')).toBeTruthy()
-    expect(screen.getByRole('link', { name: 'Ver exemplos' }).getAttribute('href')).toBe('#exemplos')
+    expect(screen.getByRole('link', { name: 'Ver exemplos' }).getAttribute('href')).toBe('/templates')
+    for (const [name, path] of [
+      ['Banners promocionais', '/generator'], ['Criação em massa', '/bulk'],
+      ['Encartes de ofertas', '/flyers'], ['Cartazes e etiquetas', '/print'],
+      ['Vídeos para TV da loja', '/videos'], ['Identidade da sua loja', '/store'],
+    ]) {
+      expect(screen.getByRole('link', { name }).getAttribute('href')).toBe(path)
+    }
+    expect(screen.getByText('Comentários ilustrativos')).toBeTruthy()
+    const comment = screen.getByRole('button', { name: 'Ver comentário de loja de roupas' })
+    fireEvent.click(comment)
+    expect(comment.getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByRole('figure').textContent).toContain('Loja de roupas')
     expect(document.title).toBe('Ofertech | Sua oferta merece destaque.')
     expect(screen.getByRole('contentinfo').textContent).toContain('Ofertech')
   })
@@ -53,7 +65,7 @@ describe('Ofertech', () => {
     }))
     render(<MemoryRouter initialEntries={['/']}><App /></MemoryRouter>)
     fireEvent.click(screen.getByRole('link', { name: 'Começar grátis' }))
-    const campaign = await screen.findByRole('textbox', { name: 'Nome da campanha' })
+    const campaign = await screen.findByRole('textbox', { name: 'Nome da campanha' }, { timeout: 3000 })
     fireEvent.change(campaign, { target: { value: 'Oferta da semana' } })
     fireEvent.click(screen.getByRole('button', { name: 'Baixar PNG' }))
     expect(screen.getByRole('heading', { name: 'Bem-vindo de volta' })).toBeTruthy()

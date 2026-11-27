@@ -112,6 +112,29 @@ describe('encartes', () => {
     }
   })
 
+  it('moves an entire flyer card while keeping the other card in its grid slot', async () => {
+    const canvas = document.createElement('canvas')
+    const context = {
+      scale: vi.fn(), save: vi.fn(), restore: vi.fn(), beginPath: vi.fn(),
+      roundRect: vi.fn(), rect: vi.fn(), fill: vi.fn(), stroke: vi.fn(),
+      fillRect: vi.fn(), fillText: vi.fn(), measureText: () => ({ width: 50 }),
+      getTransform: () => ({ a: 1, d: 1, e: 0, f: 0 }),
+    } as unknown as CanvasRenderingContext2D
+    vi.spyOn(canvas, 'getContext').mockReturnValue(context)
+    const { design } = createFlyer()
+    const first = { ...products[0], imageUrl: '' }
+    const second = { ...products[1], imageUrl: '' }
+    const report = vi.fn()
+    await renderFlyerPage(canvas, { category: '', products: [first, second] }, design, 0, 1, 1, report)
+    const initial = report.mock.calls.filter(([, , layer]) => layer === 'product')
+    report.mockClear()
+    await renderFlyerPage(canvas, { category: '', products: [{ ...first, cardPosition: { x: 100, y: 100 } }, second] }, design, 0, 1, 1, report)
+    const moved = report.mock.calls.filter(([, , layer]) => layer === 'product')
+    expect(moved[0][1].image).toMatchObject({ width: initial[0][1].image.width, height: initial[0][1].image.height })
+    expect(moved[0][1].image.y).toBeGreaterThan(initial[0][1].image.y)
+    expect(moved[1]).toEqual(initial[1])
+  })
+
   it('draws poster layers in their saved positions and reports them for dragging', async () => {
     const canvas = document.createElement('canvas')
     const fillText = vi.fn()

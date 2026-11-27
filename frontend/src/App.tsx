@@ -30,8 +30,9 @@ function LoadingPage() {
 
 function RequireAuth() {
   const { user, loading } = useAuth()
+  const { pathname } = useLocation()
   if (loading) return <div className="p-8 text-center text-slate-500">Carregando...</div>
-  return user ? <Outlet /> : <Navigate to="/login" replace />
+  return user ? <Outlet /> : <Navigate to="/login" replace state={pathname === '/store' ? { returnToStore: true } : undefined} />
 }
 
 function PlansRoute() {
@@ -66,8 +67,8 @@ export default function App() {
             <Route path="/reset-password" element={<Suspense fallback={<p role="status" className="p-8">Carregando…</p>}><ResetPasswordPage /></Suspense>} />
             <Route path="/register" element={<AuthPage mode="register" />} />
             <Route path="/plans" element={<PlansRoute />} />
-            <Route path="/generator" element={withLayout(<GeneratorPage />)} />
-            <Route path="/bulk" element={withLayout(<BulkPage />)} />
+            <Route path="/generator" element={withLayout(<GeneratorPage initialSearch={search} />)} />
+            <Route path="/bulk" element={withLayout(<BulkPage initialSearch={search} />)} />
             <Route path="/flyers" element={withLayout(<FlyerPageEditor key={`flyers${search}`} initialSearch={search} />)} />
             <Route path="/print" element={withLayout(<FlyerPageEditor key={`print${search}`} initialSearch={search} printMode />)} />
             <Route path="/videos" element={withLayout(<FlyerPageEditor key={`video${search}`} initialSearch={search} videoMode />)} />

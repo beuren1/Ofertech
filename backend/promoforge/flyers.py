@@ -71,6 +71,7 @@ class FlyerProductSerializer(serializers.Serializer):
     discountTextColor = serializers.RegexField(r'^#[0-9a-fA-F]{6}$', required=False)
     oldPriceColor = serializers.RegexField(r'^#[0-9a-fA-F]{6}$', required=False)
     textPositions = FlyerTextPositionsSerializer(required=False)
+    cardPosition = FlyerTextPositionSerializer(required=False)
     lockedLayers = serializers.ListField(
         child=serializers.ChoiceField(choices=['photo', 'name', 'originalPrice', 'offer']),
         max_length=4, required=False,

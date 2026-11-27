@@ -3,7 +3,7 @@ import { Link, NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, WandSparkles, Library, History, CreditCard, Settings,
   Moon, Sun, Menu, X, Sparkles, LogOut, Store, Newspaper, Printer, Video, Coins,
-  PanelLeftClose, PanelLeftOpen
+  PanelLeftClose, PanelLeftOpen, ShieldCheck
 } from 'lucide-react'
 import { apiRequest, useAuth } from '../auth'
 import { CREDIT_BALANCE_CHANGED, type Billing } from '../billing'
@@ -18,12 +18,14 @@ export const editorLinks = [
 ]
 
 const nav = [
+  { to: '/templates', label: 'Modelos', icon: Library },
   { to: '/dashboard', label: 'Visão geral', icon: LayoutDashboard },
   ...editorLinks,
   { to: '/store', label: 'Minha loja', icon: Store },
-  { to: '/templates', label: 'Templates', icon: Library },
   { to: '/history', label: 'Histórico', icon: History },
 ]
+
+const adminLink = { to: '/admin-dashboard', label: 'Administração comercial', icon: ShieldCheck }
 
 const creditNumber = new Intl.NumberFormat('pt-BR')
 const CreditsContext = createContext<number | undefined>(undefined)
@@ -39,6 +41,10 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
   const sidebarAction = collapsed ? 'Expandir barra lateral' : 'Recolher barra lateral'
   const navigate = useNavigate()
   const { user, accessToken, logout, error } = useAuth()
+  const menuLinks = user ? nav : nav.filter(link => editorLinks.includes(link) || link.to === '/templates')
+  const links = user?.commercial_admin ? [...menuLinks, adminLink] : menuLinks
+  const iconLayout = collapsed ? 'lg:justify-center lg:px-0' : ''
+  const labelLayout = collapsed ? 'lg:sr-only' : ''
   const userId = user?.id
   const [balance, setBalance] = useState<{ userId: number; credits: number }>()
   const credits = balance?.userId === userId ? balance?.credits : undefined
@@ -87,32 +93,30 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
     <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
       <button type="button" aria-label={sidebarAction} title={sidebarAction} aria-expanded={!collapsed} aria-controls="workspace-sidebar"
         onClick={() => setCollapsed(value => !value)}
-        className="fixed left-4 top-5 z-50 hidden h-10 w-10 place-items-center rounded-xl text-indigo-700 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950 lg:grid">
+        className="fixed left-5 top-5 z-50 hidden h-10 w-10 place-items-center rounded-xl text-indigo-700 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-950 lg:grid">
         {collapsed ? <PanelLeftOpen size={21} aria-hidden="true" /> : <PanelLeftClose size={21} aria-hidden="true" />}
       </button>
-      <aside id="workspace-sidebar" className={`fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-slate-200 bg-white motion-safe:transition-transform dark:border-slate-800 dark:bg-slate-900 ${open ? 'visible translate-x-0' : 'invisible -translate-x-full'} ${collapsed ? 'lg:invisible lg:-translate-x-full' : 'lg:visible lg:translate-x-0'}`}>
+      <aside id="workspace-sidebar" className={`fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-slate-200 bg-white motion-safe:transition-transform dark:border-slate-800 dark:bg-slate-900 lg:visible lg:translate-x-0 ${open ? 'visible translate-x-0' : 'invisible -translate-x-full'} ${collapsed ? 'lg:w-20' : ''}`}>
         <div className="flex h-20 shrink-0 items-center justify-between px-6 lg:pl-16">
-          <BrandLink />
+          <BrandLink className={collapsed ? 'lg:hidden' : ''} />
           <button className="lg:hidden" onClick={() => setOpen(false)} aria-label="Fechar menu"><X /></button>
         </div>
         <nav aria-label="Menu principal" className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 pb-3">
-          {(user ? nav : [...editorLinks, ...nav.filter(link => link.to === '/templates')]).map(({ to, label, icon: Icon }) => (
-            <NavLink key={to} to={to} onClick={() => setOpen(false)} className={({ isActive }) =>
-              `flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition ${isActive ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'}`
+          {links.map(({ to, label, icon: Icon }) => (
+            <NavLink key={to} to={to} title={collapsed ? label : undefined} onClick={() => setOpen(false)} className={({ isActive }) =>
+              `flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition ${iconLayout} ${isActive ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'}`
             }>
-              <Icon size={19} /> {label}
+              <Icon size={21} className="shrink-0" aria-hidden="true" /> <span className={labelLayout}>{label}</span>
             </NavLink>
           ))}
-          {user?.commercial_admin && <NavLink to="/admin-dashboard" onClick={() => setOpen(false)}
-            className="block rounded-xl px-3 py-3 text-sm font-semibold text-indigo-700 dark:text-indigo-300">Administração comercial</NavLink>}
         </nav>
         <nav aria-label="Conta" className="shrink-0 border-t border-slate-200 p-3 dark:border-slate-800">
-          <NavLink to="/plans" onClick={() => setOpen(false)} className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"><CreditCard size={19} /> Planos</NavLink>
-          {user && <NavLink to="/settings" onClick={() => setOpen(false)} className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"><Settings size={19} /> Configurações</NavLink>}
+          <NavLink to="/plans" title={collapsed ? 'Planos' : undefined} onClick={() => setOpen(false)} className={`flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800 ${iconLayout}`}><CreditCard size={21} className="shrink-0" aria-hidden="true" /> <span className={labelLayout}>Planos</span></NavLink>
+          {user && <NavLink to="/settings" title={collapsed ? 'Configurações' : undefined} onClick={() => setOpen(false)} className={`flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800 ${iconLayout}`}><Settings size={21} className="shrink-0" aria-hidden="true" /> <span className={labelLayout}>Configurações</span></NavLink>}
         </nav>
       </aside>
       {open && <button aria-label="Fechar menu" className="fixed inset-0 z-30 bg-slate-950/30 lg:hidden" onClick={() => setOpen(false)} />}
-      <div className={collapsed ? '' : 'lg:pl-64'}>
+      <div className={collapsed ? 'lg:pl-20' : 'lg:pl-64'}>
         <header className="sticky top-0 z-20 flex h-20 items-center justify-between border-b border-slate-200 bg-white/90 px-4 backdrop-blur dark:border-slate-800 dark:bg-slate-950/90 sm:px-8">
           <button className="rounded-lg p-2 lg:hidden" onClick={() => setOpen(true)} aria-label="Abrir menu" aria-expanded={open} aria-controls="workspace-sidebar"><Menu /></button>
           <div className="ml-auto flex items-center gap-2">

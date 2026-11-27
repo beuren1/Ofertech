@@ -19,7 +19,7 @@ const workspacePages: Record<string, [string, string]> = {
   '/flyers': ['Criar Encarte', 'Monte encartes com vários produtos e exporte em PDF ou PNG.'],
   '/print': ['Criar Cartaz', 'Crie cartazes e etiquetas de preço para impressão em tamanho real.'],
   '/videos': ['Criar Vídeo', 'Crie ofertas animadas para reproduzir em loop na TV da sua loja.'],
-  '/templates': ['Templates', 'Explore os modelos disponíveis para suas promoções.'],
+  '/templates': ['Modelos', 'Explore os modelos disponíveis para suas promoções.'],
   '/history': ['Histórico', 'Consulte suas promoções e campanhas anteriores.'],
   '/settings': ['Configurações', 'Gerencie as configurações da sua conta.'],
   '/store': ['Minha loja', 'Personalize a identidade da sua loja e o logotipo das suas artes.'],

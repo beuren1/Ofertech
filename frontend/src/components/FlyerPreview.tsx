@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent } from 'react'
-import { Lock, Unlock } from 'lucide-react'
+import { Lock, Trash2, Unlock } from 'lucide-react'
 import { dragFlyerPhoto, type FlyerDesignLayer, type FlyerLayer, type FlyerPhotoBounds, type PhotoAdjustment } from '../flyerOfferLayout'
 import { flyerCanvasSize, renderFlyerPage, type FlyerDesign, type FlyerPage, type FlyerProduct } from '../flyers'
 
@@ -15,15 +15,21 @@ const layerNames = {
   photo: 'Foto', name: 'Nome do produto', originalPrice: 'Preço anterior', offer: 'Oferta',
 }
 
-export function FlyerPreview({ page, design, index, total, onExport, onMoveLayer, onMoveDesignLayer, onToggleLock, showGuides, busy }: {
+export function FlyerPreview({ page, design, index, total, onExport, onMoveLayer, onMoveDesignLayer, onToggleLock, activeProduct, onSelectProduct, onMoveProduct, onRemoveProduct, showGuides, busy }: {
   page: FlyerPage; design: FlyerDesign; index: number; total: number; onExport?: () => void; busy: boolean
   onMoveLayer?: (product: FlyerProduct, layer: FlyerLayer) => ((adjustment: PhotoAdjustment, group?: symbol) => void) | undefined
   onMoveDesignLayer?: (layer: FlyerDesignLayer, adjustment: PhotoAdjustment, group?: symbol) => void
   onToggleLock?: (layer: PreviewLayer) => void
+  activeProduct?: FlyerProduct
+  onSelectProduct?: (product: FlyerProduct) => void
+  onMoveProduct?: (product: FlyerProduct) => ((adjustment: PhotoAdjustment, group?: symbol) => void) | undefined
+  onRemoveProduct?: (product: FlyerProduct) => void
   showGuides?: boolean
 }) {
   const canvas = useRef<HTMLCanvasElement>(null)
   const [layers, setLayers] = useState<PreviewLayer[]>([])
+  const [boxes, setBoxes] = useState<{ product: FlyerProduct; bounds: FlyerPhotoBounds }[]>([])
+  const [editLayers, setEditLayers] = useState(false)
   const [selection, setSelection] = useState<string>()
   const [guides, setGuides] = useState<{ x?: number; y?: number }>({})
   const drag = useRef<{
@@ -43,18 +49,24 @@ export function FlyerPreview({ page, design, index, total, onExport, onMoveLayer
     let active = true
     const buffer = document.createElement('canvas')
     const zones: PreviewLayer[] = []
+    const cards: typeof boxes = []
     void renderFlyerPage(buffer, page, design, index, total, previewScale,
-      (product, bounds, layer = 'photo') => zones.push({ product, bounds, layer }),
+      (product, bounds, layer = 'photo') => {
+        if (layer === 'product') cards.push({ product, bounds })
+        else zones.push({ product, bounds, layer })
+      },
       reportDesignLayers ? (designLayer, bounds) => zones.push({ designLayer, bounds }) : undefined).then(missing => {
       if (!active || !canvas.current) return
       const context = canvas.current.getContext('2d')
       context?.clearRect(0, 0, canvas.current.width, canvas.current.height)
       context?.drawImage(buffer, 0, 0)
       setLayers(zones)
+      setBoxes(cards)
       setStatus(missing ? 'Algumas imagens não puderam ser carregadas. Envie os arquivos ou use URLs que permitam CORS.' : '')
     }).catch(() => {
       if (active) {
         setLayers([])
+        setBoxes([])
         setStatus('Não foi possível renderizar a página.')
       }
     })
@@ -95,17 +107,35 @@ export function FlyerPreview({ page, design, index, total, onExport, onMoveLayer
   function startDrag(event: PointerEvent<HTMLCanvasElement>) {
     if (!onMoveLayer || busy || drag.current || event.button !== 0) return
     const { x, y } = canvasPoint(event)
-    const hit = layerAt(x, y)
-    if (!hit) return
-    const move = moveLayer(hit)
+    const hit = boxAt(x, y)
+    if (hit) {
+      const move = onMoveProduct?.(hit.product)
+      if (!move) return
+      setSelection(undefined)
+      onSelectProduct?.(hit.product)
+      drag.current = { pointer: event.pointerId, x, y, bounds: hit.bounds, move,
+        last: dragFlyerPhoto(hit.bounds, 0, 0), group: Symbol() }
+      event.currentTarget.setPointerCapture(event.pointerId)
+      event.currentTarget.style.cursor = 'grabbing'
+      return
+    }
+    const layer = layerAt(x, y)
+    if (!layer) return
+    const move = moveLayer(layer)
     if (!move) return
     drag.current = {
-      pointer: event.pointerId, x, y, bounds: hit.bounds, move,
-      last: dragFlyerPhoto(hit.bounds, 0, 0), group: Symbol(),
+      pointer: event.pointerId, x, y, bounds: layer.bounds, move,
+      last: dragFlyerPhoto(layer.bounds, 0, 0), group: Symbol(),
     }
-    setSelection(layerKey(hit))
+    setSelection(layerKey(layer))
     event.currentTarget.setPointerCapture(event.pointerId)
     event.currentTarget.style.cursor = 'grabbing'
+  }
+
+  function boxAt(x: number, y: number) {
+    if (!onMoveProduct || editLayers) return undefined
+    return [...boxes].reverse().find(({ bounds: { image } }) =>
+      x >= image.x && x <= image.x + image.width && y >= image.y && y <= image.y + image.height)
   }
 
   function moveDrag(event: PointerEvent<HTMLCanvasElement>) {
@@ -113,7 +143,7 @@ export function FlyerPreview({ page, design, index, total, onExport, onMoveLayer
     const { x, y } = canvasPoint(event)
     const active = drag.current
     if (!active) {
-      event.currentTarget.style.cursor = layerAt(x, y) ? 'grab' : ''
+      event.currentTarget.style.cursor = boxAt(x, y) || layerAt(x, y) ? 'grab' : ''
       return
     }
     if (active.pointer !== event.pointerId) return
@@ -145,7 +175,8 @@ export function FlyerPreview({ page, design, index, total, onExport, onMoveLayer
 
   const selected = layers.find(layer => layerKey(layer) === selection)
   const selectedMove = selected && moveLayer(selected)
-  const box = selected?.bounds.image
+  const selectedProduct = !editLayers && !selected ? boxes.find(box => box.product === activeProduct) : undefined
+  const box = selectedProduct?.bounds.image ?? selected?.bounds.image
   return (
     <figure className="min-w-0 space-y-2">
       {onMoveLayer && <label className="flex flex-wrap items-center gap-2 text-sm">
@@ -154,6 +185,16 @@ export function FlyerPreview({ page, design, index, total, onExport, onMoveLayer
           aria-valuetext={`${zoom}%`} onChange={event => setZoom(Number(event.target.value))} />
         <span aria-hidden="true">{zoom}%</span>
       </label>}
+      {onMoveProduct && boxes.length > 0 && <div className="flex flex-wrap items-center gap-2">
+        <button type="button" className={secondary} aria-pressed={editLayers} onClick={() => {
+          setEditLayers(value => !value)
+          setSelection(undefined)
+        }}>Editar camadas</button>
+        {selectedProduct && onRemoveProduct && <button type="button" className={secondary} disabled={busy}
+          onClick={() => onRemoveProduct(selectedProduct.product)}>
+          <Trash2 size={16} aria-hidden="true" /> Excluir {selectedProduct.product.name} da arte
+        </button>}
+      </div>}
       <div className={onMoveLayer ? 'overflow-x-auto p-1' : undefined} tabIndex={onMoveLayer && zoom > 100 ? 0 : undefined}
         role={onMoveLayer && zoom > 100 ? 'group' : undefined} aria-label={onMoveLayer && zoom > 100 ? `Prévia ampliada da página ${index + 1}` : undefined}>
         <div className="grid min-w-0 grid-cols-[minmax(0,1fr)]">

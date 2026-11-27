@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowRight, Check, Layers, Newspaper, Pause, Play, Printer, Store, Video, WandSparkles } from 'lucide-react'
+import { ArrowRight, Check, Layers, Newspaper, Pause, Play, Printer, Quote, Store, Video, WandSparkles } from 'lucide-react'
 import { BrandFooter, BrandLink, BRAND, BRAND_DESCRIPTION, SLOGAN } from '../components/Brand'
 
 const promotions = [
@@ -12,13 +12,62 @@ const promotions = [
 ] as const
 
 const features = [
-  { icon: WandSparkles, title: 'Banners promocionais', text: 'Crie artes para redes sociais com foto, preço e desconto. Remova o fundo da foto ou do logotipo no próprio editor.' },
-  { icon: Layers, title: 'Criação em massa', text: 'Importe uma lista de produtos em CSV, gere uma arte para cada oferta e baixe o lote em ZIP.' },
-  { icon: Newspaper, title: 'Encartes de ofertas', text: 'Organize produtos por categoria, escolha um dos 10 fundos prontos e arraste textos e imagens na prévia.' },
-  { icon: Printer, title: 'Cartazes e etiquetas', text: 'Monte cartazes em A3, A4 ou A5 com fundo até as bordas. Ajuste as medidas e as cópias das etiquetas para impressão.' },
-  { icon: Video, title: 'Vídeos para TV da loja', text: 'Monte uma sequência animada de ofertas, ajuste a duração de cada produto e reproduza o vídeo em loop.' },
-  { icon: Store, title: 'Identidade da sua loja', text: 'Use seu nome, logotipo e cores nas peças. Salve os projetos para voltar a editar quando precisar.' },
+  { to: '/generator', icon: WandSparkles, title: 'Banners promocionais', text: 'Crie artes para redes sociais com foto, preço e desconto. Remova o fundo da foto ou do logotipo no próprio editor.' },
+  { to: '/bulk', icon: Layers, title: 'Criação em massa', text: 'Importe uma lista de produtos em CSV, gere uma arte para cada oferta e baixe o lote em ZIP.' },
+  { to: '/flyers', icon: Newspaper, title: 'Encartes de ofertas', text: 'Organize produtos por categoria, escolha um dos 10 fundos prontos e arraste textos e imagens na prévia.' },
+  { to: '/print', icon: Printer, title: 'Cartazes e etiquetas', text: 'Monte cartazes em A3, A4 ou A5 com fundo até as bordas. Ajuste as medidas e as cópias das etiquetas para impressão.' },
+  { to: '/videos', icon: Video, title: 'Vídeos para TV da loja', text: 'Monte uma sequência animada de ofertas, ajuste a duração de cada produto e reproduza o vídeo em loop.' },
+  { to: '/store', icon: Store, title: 'Identidade da sua loja', text: 'Use seu nome, logotipo e cores nas peças. Salve os projetos para voltar a editar quando precisar.' },
 ] as const
+
+const comments = [
+  { shop: 'Mercado de bairro', text: 'Monto o encarte da semana e reaproveito o projeto quando chegam ofertas novas.' },
+  { shop: 'Loja de roupas', text: 'Gostei de usar as cores e o logo da loja nos banners. As promoções ficam com a cara da nossa marca.' },
+  { shop: 'Loja de eletrônicos', text: 'Importar a lista de produtos ajuda muito quando preciso preparar várias ofertas de uma vez.' },
+] as const
+
+function ShopComments() {
+  const [active, setActive] = useState(0)
+  const [playing, setPlaying] = useState(() => !window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches)
+  const [hovered, setHovered] = useState(false)
+
+  useEffect(() => {
+    if (!playing || hovered) return
+    const timer = window.setTimeout(() => setActive((active + 1) % comments.length), 6500)
+    return () => window.clearTimeout(timer)
+  }, [active, hovered, playing])
+
+  return (
+    <section aria-labelledby="shop-comments" className="px-6 py-16 text-center sm:py-20">
+      <h2 id="shop-comments" className="text-3xl font-black">A Ofertech no dia a dia da loja</h2>
+      <p className="mt-3 text-sm text-slate-600">Comentários ilustrativos</p>
+      <div className="mx-auto mt-7 max-w-2xl" onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
+        <div aria-live={playing ? 'off' : 'polite'} className="grid">
+          {comments.map(({ shop, text }, index) => (
+            <figure key={shop} aria-hidden={index !== active}
+              className={`col-start-1 row-start-1 grid content-center justify-items-center rounded-2xl border border-indigo-100 bg-indigo-50/60 px-6 py-8 transition-opacity duration-700 motion-reduce:transition-none sm:px-12 ${index === active ? 'opacity-100' : 'pointer-events-none opacity-0'}`}>
+              <Quote size={24} aria-hidden="true" className="text-indigo-600" />
+              <blockquote className="mt-4 text-lg leading-relaxed text-slate-800">“{text}”</blockquote>
+              <figcaption className="mt-4 text-sm font-semibold text-indigo-800">{shop}</figcaption>
+            </figure>
+          ))}
+        </div>
+        <div className="mt-3 flex items-center justify-center gap-1">
+          {comments.map(({ shop }, index) => (
+            <button key={shop} type="button" aria-label={`Ver comentário de ${shop.toLowerCase()}`} aria-pressed={index === active}
+              onClick={() => setActive(index)} className="grid size-10 place-items-center rounded-full">
+              <span aria-hidden="true" className={`h-2 rounded-full transition-[width,background-color] motion-reduce:transition-none ${index === active ? 'w-5 bg-indigo-600' : 'w-2 bg-slate-400'}`} />
+            </button>
+          ))}
+          <button type="button" aria-label={playing ? 'Pausar comentários' : 'Reproduzir comentários'} onClick={() => setPlaying(value => !value)}
+            className="grid size-10 place-items-center rounded-full text-slate-600 hover:bg-indigo-50">
+            {playing ? <Pause size={16} aria-hidden="true" /> : <Play size={16} aria-hidden="true" />}
+          </button>
+        </div>
+      </div>
+    </section>
+  )
+}
 
 function PromotionCarousel() {
   const [active, setActive] = useState(0)
@@ -69,7 +118,7 @@ export function LandingPage() {
           <div>
             <h1 className="max-w-3xl text-5xl font-black leading-[1.05] tracking-tight sm:text-6xl">{SLOGAN}</h1>
             <p className="mt-6 max-w-xl text-lg leading-8 text-slate-600">{BRAND_DESCRIPTION}</p>
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row"><Link to="/generator" className="flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-6 py-3.5 font-bold text-white shadow-xl shadow-indigo-200">Criar minha primeira arte <ArrowRight size={18} /></Link><a href="#exemplos" className="rounded-xl border border-slate-200 px-6 py-3.5 text-center font-bold">Ver exemplos</a></div>
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row"><Link to="/generator" className="flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-6 py-3.5 font-bold text-white shadow-xl shadow-indigo-200">Criar minha primeira arte <ArrowRight size={18} /></Link><Link to="/templates" className="rounded-xl border border-slate-200 px-6 py-3.5 text-center font-bold">Ver exemplos</Link></div>
             <div className="mt-7 flex flex-wrap gap-x-5 gap-y-2 text-sm text-slate-600"><span className="flex items-center gap-1.5"><Check size={16} className="text-emerald-600" /> Cadastro sem cartão</span><span className="flex items-center gap-1.5"><Check size={16} className="text-emerald-600" /> 10 créditos grátis por mês</span></div>
           </div>
           <PromotionCarousel />
@@ -78,13 +127,18 @@ export function LandingPage() {
           <div className="mx-auto max-w-7xl">
             <h2 className="text-center text-3xl font-black">O que você pode criar na {BRAND}</h2>
             <div className="mt-10 grid gap-5 md:grid-cols-3">
-              {features.map(({ icon: Icon, title, text }) => (
-                <article key={title} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-soft"><span className="grid h-11 w-11 place-items-center rounded-xl bg-indigo-50 text-indigo-600"><Icon size={21} /></span><h3 className="mt-5 text-lg font-bold">{title}</h3><p className="mt-2 leading-7 text-slate-600">{text}</p></article>
+              {features.map(({ to, icon: Icon, title, text }) => (
+                <Link key={to} to={to} aria-labelledby={`feature-${to.slice(1)}`} className="group block rounded-2xl border border-slate-200 bg-white p-6 shadow-soft transition-colors hover:border-indigo-300 hover:bg-indigo-50/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-indigo-600">
+                  <span className="grid h-11 w-11 place-items-center rounded-xl bg-indigo-50 text-indigo-600"><Icon size={21} aria-hidden="true" /></span>
+                  <h3 id={`feature-${to.slice(1)}`} className="mt-5 text-lg font-bold group-hover:text-indigo-700">{title}</h3>
+                  <p className="mt-2 leading-7 text-slate-600">{text}</p>
+                </Link>
               ))}
             </div>
             <p className="mt-8 text-center text-sm text-slate-600">Confira o custo em créditos de cada recurso e os formatos disponíveis. <Link to="/plans" className="font-semibold text-indigo-700 underline underline-offset-4">Ver planos e créditos</Link></p>
           </div>
         </section>
+        <ShopComments />
       </main>
       <BrandFooter className="mx-auto max-w-7xl px-6 py-8 text-slate-600" />
     </div>
