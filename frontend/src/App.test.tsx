@@ -41,6 +41,30 @@ describe('Ofertech', () => {
     expect(screen.getByText(/Bem-vindo de volta/i)).toBeTruthy()
   })
 
+  it('opens creation for guests and keeps the draft through login', async () => {
+    vi.stubGlobal('localStorage', { getItem: () => null, setItem: vi.fn() })
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url.endsWith('/auth/login/')) return Response.json({ access: 'test-token' })
+      if (url.endsWith('/auth/me/')) return Response.json({
+        id: 1, name: 'Cliente', email: 'cliente@example.com', profile: { plan: 'free' },
+      })
+      if (url.endsWith('/billing/')) return Response.json({ credits: 10 })
+      return Response.json({}, { status: 401 })
+    }))
+    render(<MemoryRouter initialEntries={['/']}><App /></MemoryRouter>)
+    fireEvent.click(screen.getByRole('link', { name: 'Começar grátis' }))
+    const campaign = await screen.findByRole('textbox', { name: 'Nome da campanha' })
+    fireEvent.change(campaign, { target: { value: 'Oferta da semana' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Baixar PNG' }))
+    expect(screen.getByRole('heading', { name: 'Bem-vindo de volta' })).toBeTruthy()
+    expect(screen.queryByRole('textbox', { name: 'Nome da campanha' })).toBeNull()
+    fireEvent.change(screen.getByLabelText('E-mail'), { target: { value: 'cliente@example.com' } })
+    fireEvent.change(screen.getByLabelText('Senha'), { target: { value: 'senha1234' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Entrar' }))
+    const resumedCampaign = await screen.findByRole<HTMLInputElement>('textbox', { name: 'Nome da campanha' })
+    expect(resumedCampaign.value).toBe('Oferta da semana')
+  })
+
   it('redirects unauthenticated visitors away from private pages', async () => {
     render(<MemoryRouter initialEntries={['/dashboard']}><App /></MemoryRouter>)
     await waitFor(() => expect(screen.getByText(/Bem-vindo de volta/i)).toBeTruthy())

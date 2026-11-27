@@ -84,7 +84,7 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
           <button className="lg:hidden" onClick={() => setOpen(false)} aria-label="Fechar menu"><X /></button>
         </div>
         <nav aria-label="Menu principal" className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 pb-3">
-          {nav.map(({ to, label, icon: Icon }) => (
+          {(user ? nav : [...editorLinks, ...nav.filter(link => link.to === '/templates')]).map(({ to, label, icon: Icon }) => (
             <NavLink key={to} to={to} onClick={() => setOpen(false)} className={({ isActive }) =>
               `flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition ${isActive ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'}`
             }>
@@ -96,7 +96,7 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
         </nav>
         <nav aria-label="Conta" className="shrink-0 border-t border-slate-200 p-3 dark:border-slate-800">
           <NavLink to="/plans" onClick={() => setOpen(false)} className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"><CreditCard size={19} /> Planos</NavLink>
-          <NavLink to="/settings" onClick={() => setOpen(false)} className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"><Settings size={19} /> Configurações</NavLink>
+          {user && <NavLink to="/settings" onClick={() => setOpen(false)} className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"><Settings size={19} /> Configurações</NavLink>}
         </nav>
       </aside>
       {open && <button aria-label="Fechar menu" className="fixed inset-0 z-30 bg-slate-950/30 lg:hidden" onClick={() => setOpen(false)} />}
@@ -104,22 +104,23 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
         <header className="sticky top-0 z-20 flex h-20 items-center justify-between border-b border-slate-200 bg-white/90 px-4 backdrop-blur dark:border-slate-800 dark:bg-slate-950/90 sm:px-8">
           <button className="rounded-lg p-2 lg:hidden" onClick={() => setOpen(true)} aria-label="Abrir menu"><Menu /></button>
           <div className="ml-auto flex items-center gap-2">
-            <Link to="/plans" title="Ver planos"
+            {user && <Link to="/plans" title="Ver planos"
               className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-2.5 text-sm font-semibold text-indigo-700 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950 dark:text-indigo-200 dark:hover:bg-indigo-900">
               <Coins size={16} aria-hidden="true" />
               <span aria-live="polite">
                 {credits === undefined ? <><span aria-hidden="true">—</span><span className="sr-only">Saldo de créditos indisponível</span></>
                   : <>{creditNumber.format(credits)} <span className="sr-only sm:not-sr-only">{credits === 1 ? 'crédito' : 'créditos'}</span></>}
               </span>
-            </Link>
+            </Link>}
             <button className="rounded-xl border border-slate-200 p-2.5 dark:border-slate-700" onClick={() => setDark(v => !v)} aria-label="Alternar tema">
               {dark ? <Sun size={18} /> : <Moon size={18} />}
             </button>
-            <button className="flex items-center gap-2 rounded-xl p-1.5 pr-3 hover:bg-slate-100 dark:hover:bg-slate-800" onClick={() => navigate('/settings')}>
+            {user ? <><button className="flex items-center gap-2 rounded-xl p-1.5 pr-3 hover:bg-slate-100 dark:hover:bg-slate-800" onClick={() => navigate('/settings')}>
               <span className="grid h-9 w-9 place-items-center rounded-lg bg-gradient-to-br from-indigo-500 to-violet-500 text-sm font-bold text-white">{initials}</span>
               <span className="hidden text-left sm:block"><b className="block text-sm">{displayName}</b>{user?.profile.plan_name && <small className="text-slate-500">Plano {user.profile.plan_name}</small>}</span>
             </button>
-            <button title="Sair" onClick={() => void handleLogout()} className="rounded-lg p-2 text-slate-400 hover:text-slate-700 dark:hover:text-white"><LogOut size={18} /></button>
+            <button title="Sair" onClick={() => void handleLogout()} className="rounded-lg p-2 text-slate-400 hover:text-slate-700 dark:hover:text-white"><LogOut size={18} /></button></>
+              : <Link to="/login" className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">Entrar</Link>}
           </div>
         </header>
         {error && <p role="alert" className="px-4 pt-3 text-sm text-red-600 sm:px-8">{error}</p>}

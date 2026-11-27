@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { FileImage, FileText, GripVertical, Plus, Save, Upload } from 'lucide-react'
 import { apiBlobRequest, apiRequest, getErrorMessage, useAuth } from '../auth'
+import { useCreationLogin } from '../creationLogin'
 import { parseProductCsv } from '../bulk'
 import { campaignAssetContentPath, type SavedCampaign } from '../campaigns'
 import { exportFlyer } from '../flyerExport'
@@ -50,6 +51,7 @@ async function loadFlyerBackground(url: string) {
 
 export function FlyerPageEditor({ printMode = false, videoMode = false, initialSearch = '' }: { printMode?: boolean; videoMode?: boolean; initialSearch?: string }) {
   const { accessToken, user } = useAuth()
+  const requestLogin = useCreationLogin()
   const free = user?.profile.plan === 'free'
   const lastExport = useRef<{ design: FlyerDesign; pages: FlyerPage[]; request: string; operation: CreditOperation; artifact: Awaited<ReturnType<typeof exportFlyer>>; confirmed: boolean }>()
   const { flyer, setFlyer, resetFlyer, undo, redo, canUndo, canRedo } = useFlyerHistory(() => createFlyer(printMode, videoMode))
@@ -91,9 +93,10 @@ export function FlyerPageEditor({ printMode = false, videoMode = false, initialS
   const paper = printPaper(print)
 
   useEffect(() => {
-    if (!accessToken || !initialSearch || appliedLink.current) return
+    if (!initialSearch || appliedLink.current) return
     const params = new URLSearchParams(initialSearch)
     const id = params.get('project_id')
+    if (id && !accessToken) return
     const template = !printMode && !videoMode ? flyerTemplates.find(([key]) => key === params.get('template')) : undefined
     if (!id && !template) return
     let active = true
@@ -239,7 +242,7 @@ export function FlyerPageEditor({ printMode = false, videoMode = false, initialS
   }
 
   async function save() {
-    if (!accessToken) return
+    if (!accessToken) return requestLogin()
     if (settingsError) throw new Error(settingsError)
     if (invalidVideo) throw new Error('Informe durações inteiras entre 1 e 60 segundos.')
     if (!flyer.name.trim() || !design.title.trim() || products.some(product => !product.name.trim())) {
@@ -267,7 +270,8 @@ export function FlyerPageEditor({ printMode = false, videoMode = false, initialS
   }
 
   async function download(format: 'png' | 'pdf' | 'zip', page?: number) {
-    if (!accessToken || !pages.length) return
+    if (!pages.length) return
+    if (!accessToken) return requestLogin()
     const exportedProducts = print ? (page === undefined ? pages.flatMap(sheet => sheet.products) : pages[page].products) : []
     if (print) validateProductFields(exportedProducts, true)
     const request = `${format}:${page ?? 'all'}`

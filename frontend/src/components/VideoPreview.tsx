@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FlyerDesign, FlyerProduct } from '../flyers'
 import { getErrorMessage, useAuth } from '../auth'
+import { useCreationLogin } from '../creationLogin'
 import { creditCost, creditOperation, type CreditOperation } from '../billing'
 import { prepareVideo, recordVideo } from '../videoCanvas'
 import { videoRecordingFormat, videoSize, type VideoSettings } from '../videoTimeline'
@@ -36,6 +37,7 @@ export function VideoPreview({ products, design, settings, name, invalid, busy }
   products: FlyerProduct[]; design: FlyerDesign; settings: VideoSettings; name: string; invalid: boolean; busy: boolean
 }) {
   const { accessToken, user } = useAuth()
+  const requestLogin = useCreationLogin()
   const player = useRef<HTMLDivElement>(null)
   const canvas = useRef<HTMLCanvasElement>(null)
   const elapsed = useRef(0)
@@ -105,7 +107,8 @@ export function VideoPreview({ products, design, settings, name, invalid, busy }
   }
 
   async function download() {
-    if (!format || !prepared || recording.current || !accessToken) return
+    if (!format || !prepared || recording.current) return
+    if (!accessToken) return requestLogin()
     const controller = new AbortController()
     recording.current = controller
     setProgress(0)

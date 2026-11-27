@@ -5,6 +5,7 @@ import JSZip from 'jszip'
 import { bannerPdf } from '../flyerExport'
 import { CheckCircle2, ImagePlus, Sparkles, Upload } from 'lucide-react'
 import { apiBlobRequest, apiRequest, apiUpload, getErrorMessage, useAuth } from '../auth'
+import { useCreationLogin } from '../creationLogin'
 import {
   campaignAssetContentPath,
   campaignThumbnailContentPath,
@@ -270,6 +271,7 @@ export function BulkPage() {
   const [saveError, setSaveError] = useState<string | null>(null)
   const [history, setHistory] = useState<{ past: ArtworkItem[][]; future: ArtworkItem[][] }>({ past: [], future: [] })
   const { accessToken, user } = useAuth()
+  const requestLogin = useCreationLogin()
   const plan = user?.profile.plan
   const free = plan === 'free'
   const batchLimit = free ? 5 : plan === 'pro' ? 50 : 100
@@ -622,7 +624,8 @@ export function BulkPage() {
   }
 
   const generate = async () => {
-    if (generating || !accessToken || products.length < count || count < 1 || count > batchLimit) return
+    if (generating || products.length < count || count < 1 || count > batchLimit) return
+    if (!accessToken) return requestLogin()
     setGenerating(true)
     setProgress(0)
     setGenerationError(null)
@@ -1051,7 +1054,7 @@ export function BulkPage() {
     ...(products.length > 0 && products.length <= 100 ? [products.length] : []),
   ])).filter(quantity => quantity <= batchLimit).sort((left, right) => left - right)
   const canGenerate = Boolean(
-    accessToken && campaignName.trim() && products.length >= count && count > 0 && count <= batchLimit && !generating && !parsing,
+    campaignName.trim() && products.length >= count && count > 0 && count <= batchLimit && !generating && !parsing,
   )
   const readyCount = arts.filter(art => art.status === 'ready').length
   const saveStatus = saveState === 'error'

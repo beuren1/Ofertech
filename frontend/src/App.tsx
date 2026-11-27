@@ -1,6 +1,7 @@
-import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
+import { Navigate, Outlet, Route, Routes, useLocation, useNavigate, type Location } from 'react-router-dom'
 import { lazy, Suspense, type ReactNode } from 'react'
-import { DashboardLayout } from './components/Layout'
+import { DashboardLayout, editorLinks } from './components/Layout'
+import { CreationLoginContext } from './creationLogin'
 import { AuthProvider, useAuth } from './auth'
 import { LandingPage } from './pages/Landing'
 import { AuthPage } from './pages/Auth'
@@ -45,32 +46,44 @@ function PlansRoute() {
 }
 
 export default function App() {
-  const { search } = useLocation()
+  const location = useLocation()
+  const navigate = useNavigate()
+  const editorLocation = location.state?.editorLocation as Location | undefined
+  const resumeEditor = (location.pathname === '/login' || location.pathname === '/register')
+    && editorLinks.some(link => link.to === editorLocation?.pathname) ? editorLocation : undefined
+  const { search } = resumeEditor ?? location
+
   return (
     <AuthProvider>
       <PageMetadata />
-      <Routes>
-        <Route path="/" element={<LandingPage />} />
-        <Route path="/login" element={<AuthPage mode="login" />} />
-        <Route path="/forgot-password" element={<Suspense fallback={<p role="status" className="p-8">Carregando…</p>}><ForgotPasswordPage /></Suspense>} />
-        <Route path="/reset-password" element={<Suspense fallback={<p role="status" className="p-8">Carregando…</p>}><ResetPasswordPage /></Suspense>} />
-        <Route path="/register" element={<AuthPage mode="register" />} />
-        <Route path="/plans" element={<PlansRoute />} />
-        <Route element={<RequireAuth />}>
-          <Route path="/admin-dashboard" element={<Suspense fallback={<LoadingPage />}><CommercialDashboard /></Suspense>} />
-          <Route path="/dashboard" element={withLayout(<DashboardPage />)} />
-          <Route path="/generator" element={withLayout(<GeneratorPage />)} />
-          <Route path="/bulk" element={withLayout(<BulkPage />)} />
-          <Route path="/flyers" element={withLayout(<FlyerPageEditor key={`flyers${search}`} initialSearch={search} />)} />
-          <Route path="/print" element={withLayout(<FlyerPageEditor key={`print${search}`} initialSearch={search} printMode />)} />
-          <Route path="/videos" element={withLayout(<FlyerPageEditor key={`video${search}`} initialSearch={search} videoMode />)} />
-          <Route path="/templates" element={withLayout(<TemplatesPage />)} />
-          <Route path="/history" element={withLayout(<HistoryPage />)} />
-          <Route path="/settings" element={withLayout(<SettingsPage />)} />
-          <Route path="/store" element={withLayout(<StorePage />)} />
-        </Route>
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+      <CreationLoginContext.Provider value={() => navigate('/login', { state: { editorLocation: location } })}>
+        {/* Keep the editor mounted so the draft and uploaded photos survive sign-in. */}
+        <div hidden={Boolean(resumeEditor)}>
+          <Routes location={resumeEditor ?? location}>
+            <Route path="/" element={<LandingPage />} />
+            <Route path="/login" element={<AuthPage mode="login" />} />
+            <Route path="/forgot-password" element={<Suspense fallback={<p role="status" className="p-8">Carregando…</p>}><ForgotPasswordPage /></Suspense>} />
+            <Route path="/reset-password" element={<Suspense fallback={<p role="status" className="p-8">Carregando…</p>}><ResetPasswordPage /></Suspense>} />
+            <Route path="/register" element={<AuthPage mode="register" />} />
+            <Route path="/plans" element={<PlansRoute />} />
+            <Route path="/generator" element={withLayout(<GeneratorPage />)} />
+            <Route path="/bulk" element={withLayout(<BulkPage />)} />
+            <Route path="/flyers" element={withLayout(<FlyerPageEditor key={`flyers${search}`} initialSearch={search} />)} />
+            <Route path="/print" element={withLayout(<FlyerPageEditor key={`print${search}`} initialSearch={search} printMode />)} />
+            <Route path="/videos" element={withLayout(<FlyerPageEditor key={`video${search}`} initialSearch={search} videoMode />)} />
+            <Route path="/templates" element={withLayout(<TemplatesPage />)} />
+            <Route element={<RequireAuth />}>
+              <Route path="/admin-dashboard" element={<Suspense fallback={<LoadingPage />}><CommercialDashboard /></Suspense>} />
+              <Route path="/dashboard" element={withLayout(<DashboardPage />)} />
+              <Route path="/history" element={withLayout(<HistoryPage />)} />
+              <Route path="/settings" element={withLayout(<SettingsPage />)} />
+              <Route path="/store" element={withLayout(<StorePage />)} />
+            </Route>
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </div>
+        {resumeEditor && <AuthPage mode={location.pathname === '/register' ? 'register' : 'login'} editorLocation={resumeEditor} />}
+      </CreationLoginContext.Provider>
     </AuthProvider>
   )
 }

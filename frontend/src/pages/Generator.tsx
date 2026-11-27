@@ -6,6 +6,7 @@ import { ProductCutout } from '../components/ProductCutout'
 import { ProfessionalOfferControls } from '../components/ProfessionalOfferControls'
 import { bannerPdf } from '../flyerExport'
 import { apiBlobRequest, apiRequest, apiUpload, getErrorMessage, useAuth } from '../auth'
+import { useCreationLogin } from '../creationLogin'
 import { campaignAssetContentPath, createCampaignThumbnail, toCampaignArtworkSnapshot, type SavedCampaign } from '../campaigns'
 import { readProductImage, saveProductImage } from '../imageStore'
 import {
@@ -111,6 +112,7 @@ export function GeneratorPage() {
   const [campaignSaveState, setCampaignSaveState] = useState<'idle' | 'dirty' | 'saving' | 'saved' | 'error'>('idle')
   const [campaignSaveError, setCampaignSaveError] = useState<string | null>(null)
   const { accessToken, user } = useAuth()
+  const requestLogin = useCreationLogin()
   const free = user?.profile.plan === 'free'
   const business = user?.profile.plan === 'business'
   const [customTemplates, setCustomTemplates] = useState<SavedBannerTemplate[]>([])
@@ -277,7 +279,8 @@ export function GeneratorPage() {
   const generatedExports = useRef(new WeakMap<ArtworkConfig, { product: BulkProduct; key: string; blob: Blob; format: ArtFormat; confirmed: boolean }>())
 
   const download = async (format: ArtFormat | 'pdf') => {
-    if (exporting || !accessToken) return
+    if (exporting) return
+    if (!accessToken) return requestLogin()
     let saved = generatedExports.current.get(config)
     if (saved?.product !== product) saved = undefined
     const alreadyConfirmed = Boolean(saved?.confirmed)
@@ -317,11 +320,7 @@ export function GeneratorPage() {
       saveRequested.current = true
       return
     }
-    if (!accessToken) {
-      setCampaignSaveState('error')
-      setCampaignSaveError('Entre novamente para salvar esta campanha.')
-      return
-    }
+    if (!accessToken) return requestLogin()
     if (!campaignName.trim()) {
       setCampaignSaveState('error')
       setCampaignSaveError('Informe um nome para a campanha.')
@@ -397,7 +396,7 @@ export function GeneratorPage() {
         window.setTimeout(() => void latestCampaignSave.current(), 0)
       }
     }
-  }, [accessToken, campaignId, campaignName, config, product])
+  }, [accessToken, campaignId, campaignName, config, product, requestLogin])
   latestCampaignSave.current = saveCampaign
 
   useEffect(() => {
@@ -456,7 +455,7 @@ export function GeneratorPage() {
           <div className="flex flex-col items-start gap-1">
             <button
               type="button"
-              disabled={!accessToken || campaignSaveState === 'saving' || !campaignName.trim()}
+              disabled={campaignSaveState === 'saving' || !campaignName.trim()}
               onClick={() => void saveCampaign()}
               className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50"
             >

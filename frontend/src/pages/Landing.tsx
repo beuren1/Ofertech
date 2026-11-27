@@ -62,14 +62,14 @@ export function LandingPage() {
       <header className="mx-auto flex max-w-7xl items-center justify-between px-6 py-5">
         <BrandLink />
         <nav className="hidden items-center gap-7 text-sm font-medium text-slate-600 md:flex"><a href="#recursos">Recursos</a><Link to="/plans">Planos</Link></nav>
-        <div className="flex gap-2"><Link to="/login" className="rounded-xl px-4 py-2.5 text-sm font-semibold">Entrar</Link><Link to="/register" className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-200">Começar grátis</Link></div>
+        <div className="flex gap-2"><Link to="/login" className="rounded-xl px-4 py-2.5 text-sm font-semibold">Entrar</Link><Link to="/generator" className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-200">Começar grátis</Link></div>
       </header>
       <main>
         <section className="mx-auto grid max-w-7xl items-center gap-10 px-6 py-20 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.08fr)] lg:py-28">
           <div>
             <h1 className="max-w-3xl text-5xl font-black leading-[1.05] tracking-tight sm:text-6xl">{SLOGAN}</h1>
             <p className="mt-6 max-w-xl text-lg leading-8 text-slate-600">{BRAND_DESCRIPTION}</p>
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row"><Link to="/register" className="flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-6 py-3.5 font-bold text-white shadow-xl shadow-indigo-200">Criar minha primeira arte <ArrowRight size={18} /></Link><a href="#exemplos" className="rounded-xl border border-slate-200 px-6 py-3.5 text-center font-bold">Ver exemplos</a></div>
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row"><Link to="/generator" className="flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-6 py-3.5 font-bold text-white shadow-xl shadow-indigo-200">Criar minha primeira arte <ArrowRight size={18} /></Link><a href="#exemplos" className="rounded-xl border border-slate-200 px-6 py-3.5 text-center font-bold">Ver exemplos</a></div>
             <div className="mt-7 flex flex-wrap gap-x-5 gap-y-2 text-sm text-slate-600"><span className="flex items-center gap-1.5"><Check size={16} className="text-emerald-600" /> Cadastro sem cartão</span><span className="flex items-center gap-1.5"><Check size={16} className="text-emerald-600" /> 10 créditos grátis por mês</span></div>
           </div>
           <PromotionCarousel />
