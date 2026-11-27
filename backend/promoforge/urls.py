@@ -2,6 +2,7 @@
 from rest_framework.routers import DefaultRouter
 from .flyers import FlyerProjectViewSet
 from .project_shares import ProjectSharesView, PublicProjectView, RevokeProjectShareView
+from .pix_views import AsaasWebhookView, PixOrdersView, PixOrderView
 from .commercial import (
     CommercialAdjustView, CommercialHistoryView, CommercialOverviewView, CommercialPaymentsView,
     CommercialReportView, CommercialSubscriptionsView, CommercialUsersView, PrintExportView, VideoExportView,
@@ -48,6 +49,10 @@ urlpatterns = [
     path('plans/', PlansView.as_view()),
     path('billing/', BillingView.as_view()),
     path('billing/change/', PlanChangeView.as_view()),
+    path('billing/pix/', PixOrdersView.as_view()),
+    path('billing/pix/<uuid:order_id>/', PixOrderView.as_view()),
+    path('billing/pix/<uuid:order_id>/<str:action>/', PixOrderView.as_view()),
+    path('billing/webhooks/asaas/', AsaasWebhookView.as_view()),
     path('billing/artworks/', ArtworkCreditsView.as_view()),
     path('billing/operations/', CreditOperationView.as_view()),
     path('billing/webhooks/mercado-pago/', MercadoPagoWebhookView.as_view()),

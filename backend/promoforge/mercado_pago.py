@@ -25,8 +25,14 @@ SAFE_SUBSCRIPTION_FIELDS = {
     'payer_email', 'reason', 'external_reference', 'auto_recurring',
     'auto_recurring.frequency', 'auto_recurring.frequency_type',
     'auto_recurring.transaction_amount', 'auto_recurring.currency_id',
-    'back_url', 'status',
+    'auto_recurring.start_date', 'auto_recurring.end_date', 'back_url', 'status',
+    'preapproval_plan_id', 'card_token_id',
 }
+FIELD_MESSAGE_PATTERN = re.compile(
+    r'(?<![\w.@-])(?:' + '|'.join(re.escape(field) for field in sorted(SAFE_SUBSCRIPTION_FIELDS, key=len, reverse=True))
+    + r')(?![\w.@-])',
+)
+REQUEST_ID_PATTERN = re.compile(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', re.IGNORECASE)
 # Translate known provider messages into fixed diagnostics. Never log provider prose.
 SAFE_PROVIDER_MESSAGES = {
     'both payer and collector must be real or test users': 'buyer_seller_environment_mismatch',
@@ -69,46 +75,69 @@ def provider_error_code(value):
     return None
 
 
+def error_items(value, depth=0):
+    if depth > 5:
+        return
+    if isinstance(value, list):
+        for item in value:
+            yield from error_items(item, depth + 1)
+    elif isinstance(value, dict):
+        yield value
+        for name in ('error', 'cause', 'causes', 'errors', 'details', 'violations', 'invalid_params'):
+            yield from error_items(value.get(name), depth + 1)
+    elif isinstance(value, str):
+        yield {'message': value, 'code': value}
+
+
 def provider_error_details(error):
-    fallback = ('upstream_http_error', '')
+    error_type = 'upstream_http_error'
+    details = []
+    request_id = error.headers.get('X-Request-Id', '') if error.headers else ''
+    if isinstance(request_id, str) and REQUEST_ID_PATTERN.fullmatch(request_id):
+        details.append(f'provider_request_id={request_id}')
+
     try:
         with error:
-            payload = json.loads(error.read(8192))
-    except (HTTPException, OSError, ValueError):
-        return fallback
-    if not isinstance(payload, dict):
-        return fallback
+            body = error.read(8193)
+        if len(body) > 8192:
+            return error_type, ''.join(f' {detail}' for detail in [*details, 'body_format=oversized'])
+        payload = json.loads(body) if body.strip() else None
+    except (HTTPException, OSError, ValueError, RecursionError):
+        return error_type, ''.join(f' {detail}' for detail in [*details, 'body_format=unreadable'])
 
-    error_type = next(
-        (code for name in ('error', 'code', 'type') if (code := provider_error_code(payload.get(name))) is not None),
-        fallback[0],
-    )
-    details = []
-    body_status = payload.get('status')
-    if type(body_status) is int and 100 <= body_status <= 599:
-        details.append(f'body_status={body_status}')
+    if isinstance(payload, dict):
+        error_type = next(
+            (code for name in ('error', 'code', 'type') if (code := provider_error_code(payload.get(name))) is not None),
+            error_type,
+        )
+        body_status = payload.get('status')
+        if isinstance(body_status, str) and re.fullmatch(r'[1-5][0-9]{2}', body_status):
+            body_status = int(body_status)
+        if type(body_status) is int and 100 <= body_status <= 599:
+            details.append(f'body_status={body_status}')
 
-    causes = payload.get('cause')
-    if isinstance(causes, dict):
-        causes = [causes]
     fields, messages, cause_codes = set(), set(), set()
-    for item in [payload, *(causes if isinstance(causes, list) else [])]:
-        if not isinstance(item, dict):
-            continue
-        for name in ('field', 'parameter'):
+    for item in error_items(payload):
+        if item is not payload:
+            fields.update(SAFE_SUBSCRIPTION_FIELDS.intersection(item) - {'status'})
+        for name in ('field', 'parameter', 'path', 'property', 'location'):
             field = item.get(name)
             if isinstance(field, str) and field in SAFE_SUBSCRIPTION_FIELDS:
                 fields.add(field)
-        for name in ('message', 'description'):
+        for name in ('message', 'description', 'detail', 'title', 'error'):
             message = item.get(name)
             if isinstance(message, str):
+                fields.update(FIELD_MESSAGE_PATTERN.findall(message.lower()))
                 diagnostic = SAFE_PROVIDER_MESSAGES.get(message.strip().lower().rstrip('.'))
-                if diagnostic:
+                if diagnostic and diagnostic != error_type:
                     messages.add(diagnostic)
         if item is not payload:
-            code = provider_error_code(item.get('code'))
-            if code is not None:
-                cause_codes.add(str(code))
+            for name in ('code', 'error', 'type'):
+                code = provider_error_code(item.get(name))
+                if code is not None and code != error_type:
+                    cause_codes.add(str(code))
+    if not body.strip():
+        details.append('body_format=empty')
     for label, values in (('fields', fields), ('messages', messages), ('cause_codes', cause_codes)):
         if values:
             details.append(f'{label}={",".join(sorted(values))}')

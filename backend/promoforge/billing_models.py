@@ -1,3 +1,5 @@
+from uuid import uuid4
+
 from django.conf import settings
 from django.db import models
 
@@ -73,4 +75,35 @@ class SubscriptionPayment(models.Model):
     invoice = models.ForeignKey(RecurringInvoice, on_delete=models.CASCADE, related_name='payments')
     status = models.CharField(max_length=32)
     updated_at = models.DateTimeField(null=True)
+
+
+class PixOrder(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
+    subscription = models.ForeignKey(Subscription, on_delete=models.CASCADE, related_name='pix_orders')
+    plan = models.ForeignKey(Plan, on_delete=models.PROTECT)
+    amount = models.DecimalField(max_digits=9, decimal_places=2)
+    credits = models.PositiveIntegerField()
+    customer_id = models.CharField(max_length=80)
+    payment_id = models.CharField(max_length=80, unique=True, null=True)
+    status = models.CharField(max_length=24, default='processing')
+    open = models.BooleanField(default=True)
+    due_on = models.DateField()
+    qr_expires_at = models.DateTimeField(null=True)
+    paid_until = models.DateField(null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['subscription'], condition=models.Q(open=True), name='unique_open_pix_order'),
+        ]
+
+    @property
+    def reference(self):
+        return f'ofertech-pix-{self.pk}'
+
+
+class PixWebhookEvent(models.Model):
+    id = models.CharField(max_length=128, primary_key=True)
+    order = models.ForeignKey(PixOrder, on_delete=models.CASCADE)
+    created_at = models.DateTimeField(auto_now_add=True)
 

@@ -181,7 +181,7 @@ class MercadoPagoTests(TestCase):
             (422, b'{"error":"validation_error","cause":[{"code":422,"field":"payer_email","description":"Payer not found"},{"field":"private-details","description":"buyer@example.org","code":"fake-token"}]}',
              'validation_error fields=payer_email messages=buyer_not_found cause_codes=422'),
             (400, b'{"error":"private-details","code":"private-details"}', 'upstream_http_error'),
-            (400, b'not-json-private-details', 'upstream_http_error'),
+            (400, b'not-json-private-details', 'upstream_http_error body_format=unreadable'),
         )
         for status, body, log_details in cases:
             error = HTTPError('https://api.mercadopago.com/preapproval', status, 'private-details', {}, BytesIO(body))
@@ -192,6 +192,39 @@ class MercadoPagoTests(TestCase):
                         request_mp('/preapproval', 'POST', {'payer_email': 'private-details'})
                 self.assertEqual(raised.exception.remote_status, status)
                 self.assertEqual(logs.records[0].getMessage(), f'Mercado Pago: operation=create_subscription http_status={status} error_type={log_details}')
+
+    def test_checkout_error_formats_and_provider_request_id(self):
+        request_id = '6fb78434-b93e-48ca-83f3-215d86190701'
+        cases = (
+            (b'{"status":"400","message":"Invalid payer_email: buyer@example.org"}',
+             'body_status=400 fields=payer_email'),
+            (b'[{"error":{"code":"validation_error","details":{"back_url":["secret"],"path":"auto_recurring.currency_id"}}}]',
+             'fields=auto_recurring.currency_id,back_url cause_codes=validation_error'),
+            (b'"auto_recurring.end_date is invalid"', 'fields=auto_recurring.end_date'),
+            (b'{"status":400}', 'body_status=400'),
+            (b'<html>private details</html>', 'body_format=unreadable'),
+            (b'', 'body_format=empty'),
+            (b'x' * 8193, 'body_format=oversized'),
+        )
+        for body, diagnostics in cases:
+            with self.subTest(diagnostics=diagnostics):
+                error = HTTPError('', 400, '', {'X-Request-Id': request_id}, BytesIO(body))
+                with patch('promoforge.mercado_pago.build_opener') as opener:
+                    opener.return_value.open.side_effect = error
+                    with self.assertLogs('promoforge.mercado_pago', level='WARNING') as logs:
+                        with self.assertRaises(MercadoPagoError):
+                            request_mp('/preapproval', 'POST')
+                self.assertEqual(
+                    logs.records[0].getMessage(),
+                    'Mercado Pago: operation=create_subscription http_status=400 '
+                    f'error_type=upstream_http_error provider_request_id={request_id} {diagnostics}',
+                )
+
+    def test_provider_request_id_rejects_arbitrary_header_values(self):
+        from .mercado_pago import provider_error_details
+
+        error = HTTPError('', 400, '', {'X-Request-Id': 'buyer@example.org'}, BytesIO(b'{"status":400}'))
+        self.assertEqual(provider_error_details(error), ('upstream_http_error', ' body_status=400'))
 
     def test_definitive_checkout_rejections_leave_credits_and_plan_unchanged(self):
         for status in (400, 401, 403, 422):

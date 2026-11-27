@@ -45,3 +45,14 @@ it('shows disabled paid plan buttons when the test checkout is unavailable', asy
   }
   expect(apiRequest).not.toHaveBeenCalledWith('billing/change/', expect.anything())
 })
+
+it('links to one-off Pix checkout when the sandbox is enabled', async () => {
+  const pro = { code: 'pro', name: 'Pro', monthly_price: '19.99', monthly_credits: 200 }
+  vi.mocked(apiRequest).mockResolvedValueOnce([pro]).mockResolvedValueOnce({
+    plan: pro, credits: 200, monthly_limit: 200, used: 0, history: [], pix_available: true, checkout_available: false,
+  })
+  render(<MemoryRouter><PlansPage /></MemoryRouter>)
+  expect((await screen.findByRole('link', { name: 'Pagar com Pix' })).getAttribute('href')).toBe('/plans/pix/pro')
+  expect(screen.getByText(/sem renovação automática/i)).toBeTruthy()
+  expect(screen.queryByRole('button', { name: /assinar/i })).toBeNull()
+})

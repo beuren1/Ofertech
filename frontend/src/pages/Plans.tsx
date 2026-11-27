@@ -156,12 +156,13 @@ export function PlansPage() {
         </section>
       )}
       <div className="grid gap-5 lg:grid-cols-3">
-        {plans.map(plan => (
-          <article key={plan.code} className={`flex flex-col ${panel} ${plan.code === 'pro' ? 'ring-2 ring-indigo-500' : ''}`}>
+        {plans.map(plan => {
+          const oneOff = plan.code !== 'free' && (billing?.pix_available ?? plan.pix_available)
+          return <article key={plan.code} className={`flex flex-col ${panel} ${plan.code === 'pro' ? 'ring-2 ring-indigo-500' : ''}`}>
             {plan.code === 'pro' && <span className="mb-2 self-start rounded-full bg-indigo-100 px-3 py-1 text-sm font-semibold text-indigo-800">Mais popular</span>}
             <h2 className="text-xl font-bold">{plan.name}</h2>
-            <p className="mt-4"><span className="text-3xl font-black">{currency.format(Number(plan.monthly_price))}</span>/mês</p>
-            <p className="mt-2 font-semibold">{number.format(plan.monthly_credits)} créditos por mês</p>
+            <p className="mt-4"><span className="text-3xl font-black">{currency.format(Number(plan.monthly_price))}</span>{oneOff ? ' / 30 dias' : '/mês'}</p>
+            <p className="mt-2 font-semibold">{number.format(plan.monthly_credits)} créditos {oneOff ? 'por compra' : 'por mês'}</p>
             <ul className="my-4 flex-1 space-y-2 text-sm">
               {[
                 ...(plan.code === 'free' ? basicBenefits : paidBenefits),
@@ -179,13 +180,20 @@ export function PlansPage() {
                 })}
               </ul>
             </details>
-            {plan.code !== 'free' && <p className="mt-3 text-sm text-slate-600 dark:text-slate-400">Assinatura mensal com renovação automática. Cancele pelo painel antes da próxima cobrança.</p>}
+            {(accessToken || oneOff) && plan.code !== 'free' && <p className="mt-3 text-sm text-slate-600 dark:text-slate-400">
+              {oneOff ? 'Pagamento avulso por 30 dias, sem renovação automática.' : 'Assinatura mensal com renovação automática. Cancele pelo painel antes da próxima cobrança.'}
+            </p>}
+            {oneOff && billing?.pix_legacy_paid && <p className="mt-3 text-sm">O Pix fica disponível após o fim do acesso pago pelo Mercado Pago.</p>}
             {!accessToken && plan.code !== 'free' && (
               <Link to="/login" state={{ returnToPlans: true }} className={`mt-5 inline-block text-center ${button}`}>
-                Entrar para testar {plan.name}
+                {oneOff ? `Entrar para pagar ${plan.name} com Pix` : `Entrar para testar ${plan.name}`}
               </Link>
             )}
-            {accessToken && plan.code !== 'free' && (!checkoutAvailable || !subscriptionOpen || resumablePlan === plan.code) && (
+            {billing?.pix_order?.plan.code === plan.code && <Link to={`/plans/pix/pedido/${billing.pix_order.id}`} className={`mt-5 text-center ${button}`}>Acompanhar pedido Pix</Link>}
+            {billing?.pix_available && !billing.pix_order && !subscriptionOpen && !billing.pix_legacy_paid && plan.code !== 'free' && (
+              <Link to={`/plans/pix/${plan.code}`} className={`mt-5 text-center ${button}`}>Pagar com Pix</Link>
+            )}
+            {accessToken && !billing?.pix_available && plan.code !== 'free' && (!checkoutAvailable || !subscriptionOpen || resumablePlan === plan.code) && (
               <button
                 className={`mt-5 ${button}`}
                 disabled={busy || !checkoutAvailable}
@@ -195,7 +203,7 @@ export function PlansPage() {
                 {resumablePlan === plan.code ? 'Continuar para o checkout' : `Assinar ${plan.name} em teste`}
               </button>
             )}
-            {accessToken && plan.code !== 'free' && !checkoutAvailable && (
+            {accessToken && !billing?.pix_available && plan.code !== 'free' && !checkoutAvailable && (
               <div id={`checkout-status-${plan.code}`} className="mt-3 space-y-2 rounded-xl bg-slate-100 p-3 text-sm text-slate-800 dark:bg-slate-800 dark:text-slate-100">
                 <div role="status">
                   {checkoutReasons.length ? <ul className="list-disc space-y-1 pl-5">
@@ -221,14 +229,14 @@ export function PlansPage() {
             {!accessToken && plan.code === 'free' && <Link className={`mt-5 inline-block ${button}`} to="/register">Criar conta</Link>}
             {billing?.plan.code === plan.code && <p className="mt-5 font-semibold text-indigo-600">Plano atual</p>}
           </article>
-        ))}
+        })}
       </div>
       <section className={panel} aria-labelledby="billing-faq">
         <h2 id="billing-faq" className="text-xl font-bold">Perguntas sobre planos e créditos</h2>
         <div className="mt-3 space-y-3 text-sm">
-          <details><summary className="cursor-pointer font-semibold">Quando recebo os créditos do plano?</summary><p className="mt-2">No Grátis, a cota é renovada a cada mês. Nos planos pagos, a cota do novo ciclo é liberada quando o provedor confirma o pagamento. A cota mensal é renovada sem acumular o saldo anterior.</p></details>
+          <details><summary className="cursor-pointer font-semibold">Quando recebo os créditos do plano?</summary><p className="mt-2">No Grátis, a cota é renovada a cada mês. {billing?.pix_available ? 'Os créditos Pix entram no saldo quando o Asaas confirma o recebimento.' : 'Nos planos pagos, a cota do novo ciclo é liberada quando o provedor confirma o pagamento. A cota mensal é renovada sem acumular o saldo anterior.'}</p></details>
           <details><summary className="cursor-pointer font-semibold">Quanto custa exportar?</summary><p className="mt-2">O custo varia por arte, folha ou página. Veja a tabela de cada plano. A reprodução pelo link da TV de Ofertas não é uma exportação de vídeo.</p></details>
-          <details><summary className="cursor-pointer font-semibold">Como cancelar ou solicitar reembolso?</summary><p className="mt-2">Use Cancelar assinatura no painel. Veja o procedimento em <Link to="/cancelamentos" className="underline">Cancelamentos e reembolsos</Link>.</p></details>
+          <details><summary className="cursor-pointer font-semibold">Como cancelar ou solicitar reembolso?</summary><p className="mt-2">Para cancelar uma cobrança Pix pendente, abra o pedido. Para assinaturas recorrentes, use Cancelar assinatura no painel. Veja <Link to="/cancelamentos" className="underline">Cancelamentos e reembolsos</Link>.</p></details>
         </div>
       </section>
       {billing && (
@@ -238,7 +246,7 @@ export function PlansPage() {
             {billing.history.map(item => (
               <li key={item.id} className="flex flex-wrap justify-between gap-2 py-3">
                 <span>{new Date(item.created_at).toLocaleDateString('pt-BR')} · {({
-                  renewal: 'Renovação mensal', adjustment: 'Ajuste administrativo', generation: 'Banners',
+                  renewal: 'Créditos do plano', pix_refund: 'Estorno Pix', pix_expiration: 'Fim do período Pix', adjustment: 'Ajuste administrativo', generation: 'Banners',
                   flyer: 'Exportação de encarte', poster: 'Exportação de cartaz', labels: 'Exportação de etiquetas',
                   video: 'Exportação de vídeo', cutout: 'Remoção de fundo', story: 'Exportação de story', menu: 'Exportação de cardápio',
                 } as Record<string, string>)[item.kind] ?? 'Movimento de créditos'}</span>

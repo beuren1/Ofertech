@@ -2,7 +2,15 @@ import { apiRequest, canRetryApiRequest } from './auth'
 
 export const CREDIT_BALANCE_CHANGED = 'ofertei:credit-balance-changed'
 
-export type Plan = { code: string; name: string; monthly_price: string; monthly_credits: number; limits?: { stores: number; batch: number; features: string[]; formats: string[] }; costs?: Record<keyof typeof CREDIT_COSTS, number> }
+export type Plan = {
+  code: string
+  name: string
+  monthly_price: string
+  monthly_credits: number
+  pix_available?: boolean
+  limits?: { stores: number; batch: number; features: string[]; formats: string[] }
+  costs?: Record<keyof typeof CREDIT_COSTS, number>
+}
 
 export type Billing = {
   plan: Plan
@@ -11,6 +19,10 @@ export type Billing = {
   used: number
   period: string
   checkout_available: boolean
+  pix_available?: boolean
+  pix_legacy_paid?: boolean
+  pix_customer_registered?: boolean
+  pix_order?: PixOrder | null
   checkout_blockers?: string[]
   subscription_plan: string | null
   subscription_status: string | null
@@ -19,6 +31,19 @@ export type Billing = {
   paid_until: string | null
   cancel_at_period_end: boolean
   history: { id: number; kind: string; amount: number; balance: number; created_at: string }[]
+}
+
+export type PixOrder = {
+  id: string
+  plan: Plan
+  amount: string
+  currency: 'BRL'
+  status: 'waiting' | 'processing' | 'approved' | 'expired' | 'cancelled' | 'rejected' | 'refunded' | 'refund_review'
+  due_on: string
+  qr_expires_at: string | null
+  paid_until: string | null
+  can_cancel: boolean
+  open: boolean
 }
 
 export function checkArtworkCredits(token: string, key: string, count: number, format = 'png', premium = false, bulk = false) {

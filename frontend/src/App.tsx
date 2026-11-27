@@ -9,6 +9,7 @@ import { DashboardPage } from './pages/Dashboard'
 import { TemplatesPage } from './pages/Templates'
 import { HistoryPage } from './pages/History'
 import { PlansPage } from './pages/Plans'
+import { PixCheckoutPage } from './pages/PixCheckout'
 import { SettingsPage } from './pages/Settings'
 import { StorePage } from './pages/Store'
 import { BrandFooter, commercialLinks } from './components/Brand'
@@ -84,6 +85,8 @@ export default function App() {
             <Route path="/tv" element={withLayout(<FlyerPageEditor key={`tv${search}`} initialSearch={search} videoMode tvMode />)} />
             <Route path="/templates" element={withLayout(<TemplatesPage />)} />
             <Route element={<RequireAuth />}>
+              <Route path="/plans/pix/:planCode" element={withLayout(<PixCheckoutPage />)} />
+              <Route path="/plans/pix/pedido/:orderId" element={withLayout(<PixCheckoutPage />)} />
               <Route path="/admin-dashboard" element={<Suspense fallback={<LoadingPage />}><CommercialDashboard /></Suspense>} />
               <Route path="/dashboard" element={withLayout(<DashboardPage />)} />
               <Route path="/history" element={withLayout(<HistoryPage />)} />

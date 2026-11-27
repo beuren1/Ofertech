@@ -111,6 +111,8 @@ def start_checkout(user, plan):
         raise PermissionDenied('Entre na Ofertech com o e-mail da conta compradora de teste.')
     mp.verify_test_seller()
     with billing_account(user) as account:
+        if account.pix_orders.filter(open=True).exists():
+            raise SubscriptionConflict('Já existe uma compra Pix em andamento.')
         change = open_change(account)
         if change and (change.plan_id != plan.pk or change.status in {'authorized', 'paused'}):
             raise SubscriptionConflict()

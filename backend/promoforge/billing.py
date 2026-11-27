@@ -53,6 +53,13 @@ def billing_account(user, *, refresh_allowance=True):
         if account.plan_id == 'free' and (expired or account.period is None or account.period < period):
             account.period = period
             account.monthly_limit = account.plan.monthly_credits
+            if expired and not account.paid_change_id and account.credits:
+                grant_id = CreditMovement.objects.filter(subscription=account, key__startswith='pix:').order_by('-pk').values_list('pk', flat=True).first()
+                if grant_id:
+                    CreditMovement.objects.get_or_create(
+                        subscription=account, key=f'pix-expiration:{grant_id}',
+                        defaults={'kind': 'pix_expiration', 'amount': -account.credits, 'balance': 0},
+                    )
             key = f'period:{period}'
             movement, created = CreditMovement.objects.get_or_create(
                 subscription=account, key=key,
@@ -75,7 +82,13 @@ class PlansView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request):
-        return Response([plan_data(plan) for plan in Plan.objects.order_by('monthly_price', 'code')])
+        from .asaas import enabled as pix_enabled
+
+        available = pix_enabled()
+        return Response([
+            {**plan_data(plan), 'pix_available': available and plan.code in ('pro', 'business')}
+            for plan in Plan.objects.order_by('monthly_price', 'code')
+        ])
 
 
 @method_decorator(never_cache, name='dispatch')
@@ -83,7 +96,9 @@ class BillingView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        from .asaas import enabled as pix_enabled
         from .mercado_pago import checkout_blockers
+        from .pix_billing import legacy_paid, order_data
         from .recurring import open_change
 
         with billing_account(request.user) as account:
@@ -104,13 +119,19 @@ class BillingView(APIView):
                     or (paid_until and paid_until <= today)
                 )
             )
-            blockers = checkout_blockers(request.user)
+            pix_available = pix_enabled()
+            blockers = [] if pix_available else checkout_blockers(request.user)
+            pix_order = account.pix_orders.filter(open=True).select_related('plan').first()
             return Response({
                 'plan': plan_data(account.plan), 'credits': account.credits,
                 'monthly_limit': account.monthly_limit, 'used': used,
                 'period': account.period, 'cancel_at_period_end': account.cancel_at_period_end,
-                'checkout_available': not blockers,
+                'checkout_available': not pix_available and not blockers,
                 'checkout_blockers': blockers,
+                'pix_available': pix_available,
+                'pix_legacy_paid': legacy_paid(account),
+                'pix_customer_registered': account.pix_orders.exists() if pix_available else False,
+                'pix_order': order_data(pix_order) if pix_order else None,
                 'subscription_plan': change.plan_id if change else None,
                 'subscription_status': change.status if change else None,
                 'payment_status': payment_state,
@@ -125,6 +146,8 @@ class PlanChangeView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
+        from .asaas import enabled as pix_enabled
+        from .pix_billing import PixConflict
         from .recurring import cancel_subscription, start_checkout
 
         code = request.data.get('plan')
@@ -135,6 +158,8 @@ class PlanChangeView(APIView):
             with billing_account(request.user) as account:
                 cancel_subscription(account)
                 return Response({'cancel_at_period_end': account.cancel_at_period_end})
+        if pix_enabled():
+            raise PixConflict('Novas compras de planos são feitas pelo checkout Pix.')
         change = start_checkout(request.user, plan)
         return Response({
             'status': change.status,

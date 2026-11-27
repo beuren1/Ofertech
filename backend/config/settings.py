@@ -219,6 +219,11 @@ CORS_ALLOW_CREDENTIALS = True
 
 MP_ACCESS_TOKEN = os.getenv('MP_ACCESS_TOKEN', '').strip()
 MP_MODE = os.getenv('MP_MODE', 'test').strip().lower()
+ASAAS_ENVIRONMENT = os.getenv('ASAAS_ENVIRONMENT', 'disabled').strip().lower()
+if ASAAS_ENVIRONMENT not in {'disabled', 'sandbox', 'production'}:
+    raise ImproperlyConfigured('ASAAS_ENVIRONMENT aceita disabled, sandbox ou production.')
+ASAAS_API_KEY = os.getenv('ASAAS_API_KEY', '').strip()
+ASAAS_WEBHOOK_TOKEN = os.getenv('ASAAS_WEBHOOK_TOKEN', '').strip()
 if MP_MODE not in {'off', 'test'}:
     raise ImproperlyConfigured('MP_MODE aceita off ou test. O checkout comercial ainda não está habilitado.')
 MP_TEST_SELLER_ID = os.getenv('MP_TEST_SELLER_ID', '').strip()

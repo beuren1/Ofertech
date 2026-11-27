@@ -284,9 +284,97 @@ For PostgreSQL, set `DATABASE_URL` in `backend/.env`, for example:
 DATABASE_URL=postgresql://promoforge:password@localhost:5432/promoforge
 ```
 
+## Pix Asaas em sandbox
+
+O Grátis oferece 10 créditos mensais. Cada compra avulsa do Pro (R$ 19,99)
+libera 200 créditos e cada compra do Business (R$ 39,99) libera 1.000.
+O Django determina o valor e o número de créditos. O plano pago dura 30 dias
+no fuso da aplicação, sem renovação automática.
+
+### Configurar a homologação
+
+1. Crie uma conta em [Asaas Sandbox](https://sandbox.asaas.com/) e gere uma
+   chave em **Menu do usuário → Integrações → Chaves de API**. Use uma chave
+   Pix da própria conta de teste para gerar QR Codes dinâmicos. A documentação
+   contempla cobranças Pix de contas pessoa física. A habilitação depende da
+   conta e deve ser verificada no painel ou com o Asaas antes de qualquer
+   liberação comercial. [Sandbox](https://docs.asaas.com/docs/sandbox) ·
+   [Chaves de API](https://docs.asaas.com/docs/chaves-de-api) ·
+   [Cobranças Pix](https://docs.asaas.com/docs/cobrancas-via-pix)
+2. No **serviço de homologação** do Django no Render, use PostgreSQL e usuários
+   de teste próprios. Em **Environment**, configure `ASAAS_ENVIRONMENT=sandbox`,
+   `ASAAS_API_KEY` com a chave do sandbox e `ASAAS_WEBHOOK_TOKEN` com um
+   segredo aleatório de 32 a 255 caracteres, sem espaços. Use o mesmo token
+   no cadastro do webhook. Em execução local, configure as mesmas variáveis
+   no `backend/.env`. Mantenha as credenciais no backend. [Variáveis e segredos no Render](https://render.com/docs/configure-environment-variables)
+3. Quando publicar manualmente a versão de homologação, execute
+   `python manage.py migrate` no backend de teste (o script do Render já
+   executa migrações). Configure o frontend de homologação para usar a URL
+   desse backend. O padrão `disabled` mantém o checkout Pix desligado.
+   O valor `production` também mantém o Pix bloqueado pelo código.
+4. No painel **Sandbox** do Asaas, entre em **Integrações → Webhooks** e
+   configure `https://<backend-de-homologacao>.onrender.com/api/billing/webhooks/asaas/`
+   com API **v3** e o mesmo **Auth Token** do Render. Habilite
+   `PAYMENT_CREATED`, `PAYMENT_CONFIRMED`, `PAYMENT_RECEIVED`,
+   `PAYMENT_OVERDUE`, `PAYMENT_DELETED`, `PAYMENT_RESTORED`,
+   `PAYMENT_REFUND_IN_PROGRESS`, `PAYMENT_PARTIALLY_REFUNDED`,
+   `PAYMENT_REFUNDED` e `PAYMENT_REFUND_DENIED` (além dos eventos de
+   contestação, se disponíveis). [Configurar webhook no painel](https://docs.asaas.com/docs/criar-novo-webhook-pela-aplicacao-web) ·
+   [Eventos de cobrança](https://docs.asaas.com/docs/webhook-para-cobrancas)
+
+### Fazer o primeiro pagamento simulado
+
+1. Entre na Ofertech de homologação e, em **Planos e créditos**, escolha
+   **Pagar com Pix**. Use nome e CPF/CNPJ de teste aceitos pelo Asaas. Verifique
+   o valor, o QR Code, o Pix Copia e Cola e o saldo antes da confirmação.
+2. No painel do Sandbox, abra a cobrança Pix e selecione **Confirmar pagamento**.
+   Quando a conta permitir a operação pela API, use
+   `POST https://api-sandbox.asaas.com/v3/sandbox/payment/{id}/confirm`
+   com o cabeçalho `access_token` e a chave de teste. Use o identificador
+   `pay_...` exibido pelo Asaas. [Simular pelo painel](https://docs.asaas.com/docs/como-adicionar-dinheiro-para-testes) ·
+   [Simular pela API](https://docs.asaas.com/reference/confirmar-pagamento)
+3. A página consulta periodicamente o estado local. Confira **Pagamento
+   aprovado**, a validade e o crédito em **Planos e créditos**. Reenvie o
+   mesmo evento pelos logs do Asaas e confira que o saldo permaneceu igual.
+   **Consultar no Asaas** permite conciliar pontualmente se o webhook atrasar.
+   Uma cobrança `CONFIRMED` fica em processamento até `RECEIVED`. Em contas
+   pessoa física, o Asaas documenta que a análise cautelar pode durar até
+   72 horas e terminar em recebimento ou estorno. [Estados do Pix](https://docs.asaas.com/reference/criar-nova-cobranca)
+
+### Regras de cobrança e créditos
+
+- Pagamentos confirmados somam os créditos ao saldo vigente. Uma compra
+  antecipada do mesmo plano estende a validade por 30 dias. A troca de plano
+  vale imediatamente e inicia um período de 30 dias. Ao vencer, o plano
+  volta ao Grátis segundo a política de cota mensal existente. O histórico
+  de créditos é preservado.
+- A integração mantém um pedido em aberto por conta. Se a criação
+  ficar inconclusiva após um timeout, **Consultar no Asaas** procura a cobrança
+  pela referência `ofertech-pix-<UUID do pedido>`. Se a referência continuar
+  ausente no Sandbox, encaminhe o identificador ao suporte para conciliação
+  antes de liberar a criação de outra cobrança.
+- Estorno parcial ou em processamento fica em análise. O estorno integral
+  retira o saldo não consumido daquela compra, considerando os créditos
+  mais recentes como os primeiros a serem consumidos. Se a compra estornada
+  sustenta o acesso atual, volta a valer um período Pix anterior ainda
+  vigente, quando houver. Uma compra posterior conserva a validade já
+  concedida se o estorno for de outro pedido.
+- Com o Pix disponível, a interface direciona novas compras ao Asaas.
+  Assinaturas antigas seguem com seu processamento e cancelamento habituais.
+  O checkout Pix fica disponível para essas contas depois do fim da
+  assinatura e do acesso pago existente.
+- O webhook confirma o token e consulta a cobrança diretamente na API do
+  Asaas. O registro de entrega e o movimento de créditos são persistidos
+  na mesma transação. Para diagnóstico, compare os identificadores da
+  cobrança, do pedido e da entrega nos logs do Sandbox. O banco da
+  Ofertech guarda os IDs, valores e estados necessários à conciliação.
+  O nome e o documento informados no checkout são encaminhados ao Asaas
+  para o cadastro do pagador.
+
 ## Mercado Pago em teste
 
-A Ofertech usa o checkout hospedado de assinaturas sem plano associado. Os
+A Ofertech mantém o checkout hospedado de assinaturas no ambiente de teste
+quando o Pix está desligado. Os
 preços vêm do catálogo Django. A autorização do checkout registra a assinatura,
 e os créditos pagos só são liberados depois da confirmação da cobrança recorrente.
 
@@ -323,6 +411,11 @@ que o ID configurado corresponda ao vendedor de teste. A segunda chama
 `POST /preapproval` e registra códigos e campos reconhecidos na rejeição.
 Use duas contas de teste brasileiras distintas. Confirme o e-mail no perfil
 do comprador e use o mesmo endereço no login da Ofertech.
+Se a criação retornar 400 sem campos ou códigos reconhecidos, informe ao
+suporte do Mercado Pago o `provider_request_id` (quando presente), o horário
+da tentativa, o endpoint `POST /preapproval` e o status HTTP. O identificador
+vem do cabeçalho `X-Request-Id` quando tem formato UUID. O log pode indicar
+campos citados pelo provedor, que servem como pistas para a investigação.
 
 O cancelamento interrompe as cobranças recorrentes e preserva o saldo do ciclo
 já pago até a expiração. Na ausência de uma renovação confirmada, o usuário
