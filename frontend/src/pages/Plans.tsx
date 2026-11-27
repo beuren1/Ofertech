@@ -72,7 +72,9 @@ export function PlansPage() {
     ? 'Entre com a conta compradora de teste para contratar.'
     : billing
       ? 'Checkout de teste indisponível para esta conta. As assinaturas comerciais ainda não foram abertas.'
-      : 'A contratação depende da confirmação da disponibilidade do checkout de teste.'
+      : error
+        ? 'Não foi possível consultar sua conta. Tente verificar a disponibilidade novamente.'
+        : 'Verificando a disponibilidade do checkout de teste…'
 
   useEffect(() => {
     let active = true
@@ -158,6 +160,10 @@ export function PlansPage() {
           {checkoutReasons.length > 0 && <ul className="list-disc space-y-1 pl-5">
             {checkoutReasons.map(reason => <li key={reason}>{reason}</li>)}
           </ul>}
+          {accessToken && !billing && error && <button type="button" disabled={busy}
+            onClick={() => void update()} className="font-semibold text-indigo-700 underline dark:text-indigo-300">
+            Verificar checkout novamente
+          </button>}
         </div>
       )}
       <div className="grid gap-5 lg:grid-cols-3">
@@ -185,7 +191,12 @@ export function PlansPage() {
               </ul>
             </details>
             {plan.code !== 'free' && <p className="mt-3 text-sm text-slate-600 dark:text-slate-400">Assinatura mensal com renovação automática. Cancele pelo painel antes da próxima cobrança.</p>}
-            {plan.code !== 'free' && (!checkoutAvailable || !subscriptionOpen || resumablePlan === plan.code) && (
+            {!accessToken && plan.code !== 'free' && (
+              <Link to="/login" state={{ returnToPlans: true }} className={`mt-5 inline-block text-center ${button}`}>
+                Entrar para testar {plan.name}
+              </Link>
+            )}
+            {accessToken && plan.code !== 'free' && (!checkoutAvailable || !subscriptionOpen || resumablePlan === plan.code) && (
               <button
                 className={`mt-5 ${button}`}
                 disabled={busy || !checkoutAvailable}
