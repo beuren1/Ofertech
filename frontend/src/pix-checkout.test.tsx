@@ -25,6 +25,20 @@ const waiting: PixOrder = {
   qr_expires_at: null, paid_until: null, can_cancel: true, open: true,
 }
 
+it('opens the hosted sandbox invoice in a separate tab while the order is pending', async () => {
+  const invoice = 'https://sandbox.asaas.com/i/test-invoice'
+  vi.mocked(apiRequest).mockImplementation(async path => path.endsWith('/qr/') ? { invoice_url: invoice } : waiting)
+  render(<MemoryRouter initialEntries={['/plans/pix/pedido/test-order']}>
+    <Routes><Route path="/plans/pix/pedido/:orderId" element={<PixCheckoutPage />} /></Routes>
+  </MemoryRouter>)
+  const link = await screen.findByRole('link', { name: 'Abrir fatura no Asaas Sandbox' })
+  expect(link.getAttribute('href')).toBe(invoice)
+  expect(link.getAttribute('target')).toBe('_blank')
+  expect(link.getAttribute('rel')).toContain('noreferrer')
+  expect(screen.getByText('Aguardando pagamento')).toBeTruthy()
+  expect(syncPlan).not.toHaveBeenCalled()
+})
+
 it('shows the Pix QR and copy code, then updates after webhook confirmation', async () => {
   let current = waiting
   const writeText = vi.fn().mockResolvedValue(undefined)

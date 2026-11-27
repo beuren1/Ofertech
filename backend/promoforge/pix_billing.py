@@ -316,10 +316,26 @@ def order_data(order):
     }
 
 
+def invoice_fallback(order, path):
+    payment = asaas.request(path)
+    validate_payment(order, payment, order.payment_id)
+    if payment_status(payment, order.amount) != 'waiting':
+        raise PixConflict('Esta cobrança não está aguardando um pagamento Pix. Consulte a situação do pedido.')
+    url = asaas.sandbox_invoice_url(payment.get('invoiceUrl'))
+    if url is None:
+        asaas.log_failure('GET /payments/{id}', 'invalid_sandbox_invoice_url')
+        raise asaas.AsaasError()
+    return {'invoice_url': url}
+
+
 def get_qr(order):
-    if not order.open or order_data(order)['status'] != 'waiting' or not order.payment_id:
+    if not order.open or order_data(order)['status'] != 'waiting' or not asaas.resource_id(order.payment_id, 'pay'):
         raise PixConflict('Esta cobrança não está aguardando um pagamento Pix.')
-    qr = asaas.request(f'/payments/{order.payment_id}/pixQrCode')
+    path = f'/payments/{order.payment_id}'
+    try:
+        qr = asaas.request(f'{path}/pixQrCode')
+    except asaas.AsaasError:
+        return invoice_fallback(order, path)
     try:
         expires = parse_datetime(qr['expirationDate'])
         image = qr['encodedImage']
@@ -327,7 +343,8 @@ def get_qr(order):
         if expires is None or not re.fullmatch(r'[A-Za-z0-9+/=]{1,250000}', image) or not isinstance(payload, str) or not 1 <= len(payload) <= 2048:
             raise ValueError()
     except (KeyError, TypeError, ValueError):
-        raise asaas.AsaasError() from None
+        asaas.log_failure('GET /payments/{id}/pixQrCode', 'invalid_qr_data')
+        return invoice_fallback(order, path)
     if timezone.is_naive(expires):
         expires = timezone.make_aware(expires, timezone.get_default_timezone())
     PixOrder.objects.filter(pk=order.pk, status='waiting').update(qr_expires_at=expires)

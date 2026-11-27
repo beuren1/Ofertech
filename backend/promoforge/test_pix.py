@@ -30,6 +30,7 @@ class PixCheckoutTests(TestCase):
         self.error = None
         self.reject = False
         self.simulate_timeout = False
+        self.qr_error = None
         self.stub = patch('promoforge.asaas.request', side_effect=self.provider)
         self.remote_calls = self.stub.start()
         self.addCleanup(self.stub.stop)
@@ -57,6 +58,8 @@ class PixCheckoutTests(TestCase):
             payment['deleted'] = True
             return {'id': payment['id'], 'deleted': True}
         if path.endswith('/pixQrCode'):
+            if self.qr_error:
+                raise self.qr_error
             return {
                 'encodedImage': 'YWJj', 'payload': 'pix-copia-e-cola',
                 'expirationDate': (timezone.now() + timedelta(hours=1)).isoformat(),
@@ -102,6 +105,49 @@ class PixCheckoutTests(TestCase):
         self.assertEqual(qr.data['payload'], 'pix-copia-e-cola')
         self.assertEqual(qr.data['encoded_image'], 'YWJj')
         self.assertIsNotNone(PixOrder.objects.get(pk=self.order_id).qr_expires_at)
+
+    def test_qr_400_falls_back_to_the_verified_pending_invoice(self):
+        self.create()
+        self.qr_error = asaas.AsaasError(400)
+        invoice = 'https://sandbox.asaas.com/i/123456789'
+        self.remote['pay_1']['invoiceUrl'] = invoice
+        response = self.client.post(self.path('qr/'), {'invoice_url': 'https://example.test'}, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data, {'invoice_url': invoice})
+        self.assertEqual(self.remote_calls.call_args_list[-2].args, ('/payments/pay_1/pixQrCode',))
+        self.assertEqual(self.remote_calls.call_args.args, ('/payments/pay_1',))
+        self.assertEqual(self.account().plan_id, 'free')
+        self.assertEqual(self.account().credits, 10)
+        self.assertIsNone(PixOrder.objects.get(pk=self.order_id).qr_expires_at)
+        self.assertEqual(len(self.remote), 1)
+
+    @patch('promoforge.pix_views.take_or_throttle')
+    def test_invoice_fallback_rejects_untrusted_links_and_mismatched_payments(self, _throttle):
+        self.create()
+        self.qr_error = asaas.AsaasError(400)
+        payment = self.remote['pay_1']
+        for url in (
+            None, 'http://sandbox.asaas.com/i/test', 'https://www.asaas.com/i/test',
+            'https://sandbox.asaas.com.evil.test/i/test', 'https://sandbox.asaas.com@evil.test/i/test',
+            'https://evil.test@sandbox.asaas.com/i/test', 'https://sandbox.asaas.com:443/i/test',
+            'https://sandbox.asaas.com/i/test?redirect=https://evil.test',
+            'https://sandbox.asaas.com/i/%2e%2e', 'https://sandbox.asaas.com/redirect/test',
+        ):
+            with self.subTest(url=url):
+                payment['invoiceUrl'] = url
+                response = self.client.post(self.path('qr/'))
+                self.assertEqual(response.status_code, 502)
+                self.assertNotIn('invoice_url', response.data)
+        payment['invoiceUrl'] = 'https://sandbox.asaas.com/i/test'
+        for field, value in (('customer', 'cus_other'), ('value', '39.99'), ('externalReference', 'other'), ('billingType', 'BOLETO')):
+            with self.subTest(field=field):
+                old = payment[field]
+                payment[field] = value
+                self.assertEqual(self.client.post(self.path('qr/')).status_code, 502)
+                payment[field] = old
+        payment['status'] = 'RECEIVED'
+        self.assertEqual(self.client.post(self.path('qr/')).status_code, 409)
+        self.assertEqual(self.account().credits, 10)
 
     def test_waits_during_cautionary_block_and_applies_only_once_even_out_of_order(self):
         self.create()

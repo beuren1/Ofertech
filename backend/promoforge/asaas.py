@@ -63,6 +63,12 @@ def resource_id(value, prefix):
     return isinstance(value, str) and re.fullmatch(rf'{prefix}_[A-Za-z0-9_-]{{1,75}}', value) is not None
 
 
+def sandbox_invoice_url(value):
+    if isinstance(value, str) and re.fullmatch(r'https://sandbox\.asaas\.com/i/[A-Za-z0-9_-]{1,128}', value):
+        return value
+    return None
+
+
 def operation_name(method, path):
     if path in {'/customers', '/payments'}:
         return f'{method} {path}'

@@ -18,7 +18,7 @@ const labels: Record<PixOrder['status'], string> = {
   refund_review: 'Estorno ou contestação em análise',
 }
 
-type PixCode = { encoded_image: string; payload: string; expires_at: string }
+type PixCode = { encoded_image: string; payload: string; expires_at: string } | { invoice_url: string }
 
 export function PixCheckoutPage() {
   const { accessToken, syncPlan } = useAuth()
@@ -136,7 +136,7 @@ export function PixCheckoutPage() {
     try {
       const result = await apiRequest<PixOrder>(path + type + '/', { method: 'POST', accessToken })
       setOrder(result)
-      if (type === 'refresh' && result.status === 'waiting' && status === 'waiting' && !pix) {
+      if (type === 'refresh' && result.open && result.status === 'waiting' && status === 'waiting' && (!pix || 'invoice_url' in pix)) {
         setPix(await apiRequest<PixCode>(path + 'qr/', { method: 'POST', accessToken }))
       }
     } catch (reason) {
@@ -148,7 +148,7 @@ export function PixCheckoutPage() {
   }
 
   async function copy() {
-    if (!pix) return
+    if (!pix || !('payload' in pix)) return
     try {
       await navigator.clipboard.writeText(pix.payload)
       setCopied(true)
@@ -185,7 +185,11 @@ export function PixCheckoutPage() {
         <p className="text-sm">Vencimento da cobrança em {date(current.due_on)}.</p>
         {current.status === 'approved' && current.paid_until && <p>Plano ativado e créditos liberados. O acesso pago termina em {date(current.paid_until)}.</p>}
         {current.status === 'processing' && <p>O Asaas ainda está confirmando a cobrança ou o recebimento.</p>}
-        {canShowQr && pix && <div className="space-y-3">
+        {canShowQr && pix && 'invoice_url' in pix && <div className="space-y-3">
+          <p>Abra a fatura do Asaas Sandbox para ver o QR Code e o Pix Copia e Cola. Acompanhe a confirmação do pagamento nesta página.</p>
+          <a href={pix.invoice_url} target="_blank" rel="noopener noreferrer" className={`inline-block ${primary}`}>Abrir fatura no Asaas Sandbox</a>
+        </div>}
+        {canShowQr && pix && 'payload' in pix && <div className="space-y-3">
           <p>Escaneie o código ou copie o Pix para pagar. No sandbox, use a confirmação simulada do Asaas.</p>
           <img className="mx-auto w-52 max-w-full rounded-lg bg-white p-2" src={`data:image/png;base64,${pix.encoded_image}`} alt="QR Code Pix da cobrança" />
           <p className="text-sm">QR Code válido até {new Date(pix.expires_at).toLocaleString('pt-BR')}.</p>
