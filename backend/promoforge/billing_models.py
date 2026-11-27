@@ -20,6 +20,7 @@ class Subscription(models.Model):
     cancel_at_period_end = models.BooleanField(default=False)
     paid_until = models.DateField(null=True)
     paid_change = models.ForeignKey('PlanChange', null=True, on_delete=models.SET_NULL, related_name='+')
+    paid_pix_order = models.ForeignKey('PixOrder', null=True, on_delete=models.SET_NULL, related_name='+')
 
 
 class CreditMovement(models.Model):
@@ -84,7 +85,8 @@ class PixOrder(models.Model):
     amount = models.DecimalField(max_digits=9, decimal_places=2)
     credits = models.PositiveIntegerField()
     customer_id = models.CharField(max_length=80)
-    payment_id = models.CharField(max_length=80, unique=True, null=True)
+    environment = models.CharField(max_length=10, choices=[('sandbox', 'Sandbox'), ('production', 'Produção')], default='sandbox')
+    payment_id = models.CharField(max_length=80, null=True)
     status = models.CharField(max_length=24, default='processing')
     open = models.BooleanField(default=True)
     due_on = models.DateField()
@@ -94,16 +96,18 @@ class PixOrder(models.Model):
 
     class Meta:
         constraints = [
-            models.UniqueConstraint(fields=['subscription'], condition=models.Q(open=True), name='unique_open_pix_order'),
+            models.UniqueConstraint(fields=['subscription', 'environment'], condition=models.Q(open=True), name='unique_open_pix_order_env'),
+            models.UniqueConstraint(fields=['environment', 'payment_id'], name='unique_pix_payment_env'),
         ]
 
     @property
     def reference(self):
-        return f'ofertech-pix-{self.pk}'
+        prefix = 'ofertech-pix-prod-' if self.environment == 'production' else 'ofertech-pix-'
+        return f'{prefix}{self.pk}'
 
 
 class PixWebhookEvent(models.Model):
-    id = models.CharField(max_length=128, primary_key=True)
+    id = models.CharField(max_length=139, primary_key=True)
     order = models.ForeignKey(PixOrder, on_delete=models.CASCADE)
     created_at = models.DateTimeField(auto_now_add=True)
 

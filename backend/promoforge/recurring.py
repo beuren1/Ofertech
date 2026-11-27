@@ -264,6 +264,7 @@ def apply_invoice(account, change, invoice):
         return
     account.plan = change.plan
     account.paid_change = change
+    account.paid_pix_order = None
     account.paid_until = paid_until
     account.period = invoice.due_on.replace(day=1)
     account.cancel_at_period_end = False

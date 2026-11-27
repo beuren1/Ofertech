@@ -26,7 +26,7 @@ SAFE_ERROR_CODES = {
 
 class AsaasUnavailable(APIException):
     status_code = 503
-    default_detail = 'Pix de teste indisponível no momento.'
+    default_detail = 'Pagamento Pix indisponível no momento.'
 
 
 class AsaasError(APIException):
@@ -43,19 +43,37 @@ class NoRedirect(HTTPRedirectHandler):
         return None
 
 
-def enabled():
-    token = settings.ASAAS_WEBHOOK_TOKEN
-    key = settings.ASAAS_API_KEY
+def credentials():
+    if settings.ASAAS_ENVIRONMENT == 'production':
+        return settings.ASAAS_PRODUCTION_API_KEY, settings.ASAAS_PRODUCTION_WEBHOOK_TOKEN
+    return settings.ASAAS_API_KEY, settings.ASAAS_WEBHOOK_TOKEN
+
+
+def configured():
+    environment = settings.ASAAS_ENVIRONMENT
+    key, token = credentials()
+    if environment == 'production':
+        if not key.startswith('$aact_prod_') or len(key) <= len('$aact_prod_') or key == settings.ASAAS_API_KEY:
+            return False
+        if token in {settings.ASAAS_WEBHOOK_TOKEN, settings.ASAAS_API_KEY}:
+            return False
     return (
-        settings.ASAAS_ENVIRONMENT == 'sandbox'
+        environment in ENDPOINTS
         and bool(key)
         and key.isascii()
         and key.isprintable()
         and not any(char.isspace() for char in key)
-        and not key.startswith('$aact_prod_')
+        and (environment != 'sandbox' or not key.startswith('$aact_prod_'))
         and 32 <= len(token) <= 255
         and not any(char.isspace() for char in token)
         and token != key
+        and not token.startswith(('$aact_prod_', '$aact_hmlg_'))
+    )
+
+
+def enabled():
+    return configured() and (
+        settings.ASAAS_ENVIRONMENT == 'sandbox' or settings.ASAAS_PRODUCTION_ENABLED
     )
 
 
@@ -63,8 +81,9 @@ def resource_id(value, prefix):
     return isinstance(value, str) and re.fullmatch(rf'{prefix}_[A-Za-z0-9_-]{{1,75}}', value) is not None
 
 
-def sandbox_invoice_url(value):
-    if isinstance(value, str) and re.fullmatch(r'https://sandbox\.asaas\.com/i/[A-Za-z0-9_-]{1,128}', value):
+def invoice_url(value, environment):
+    host = {'sandbox': 'sandbox.asaas.com', 'production': 'www.asaas.com'}.get(environment)
+    if host and isinstance(value, str) and re.fullmatch(rf'https://{re.escape(host)}/i/[A-Za-z0-9_-]{{1,128}}', value):
         return value
     return None
 
@@ -101,13 +120,13 @@ def error_codes(error):
 
 
 def request(path, method='GET', data=None, *, query=None):
-    if not enabled():
+    if not configured() or (method == 'POST' and not enabled()):
         raise AsaasUnavailable()
     url = ENDPOINTS[settings.ASAAS_ENVIRONMENT] + path
     if query:
         url += '?' + urlencode(query)
     req = Request(url, method=method, data=json.dumps(data).encode() if data is not None else None, headers={
-        'access_token': settings.ASAAS_API_KEY,
+        'access_token': credentials()[0],
         'User-Agent': 'Ofertech/1.0',
         'Accept': 'application/json',
         'Content-Type': 'application/json',

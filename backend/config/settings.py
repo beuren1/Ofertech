@@ -224,6 +224,9 @@ if ASAAS_ENVIRONMENT not in {'disabled', 'sandbox', 'production'}:
     raise ImproperlyConfigured('ASAAS_ENVIRONMENT aceita disabled, sandbox ou production.')
 ASAAS_API_KEY = os.getenv('ASAAS_API_KEY', '').strip()
 ASAAS_WEBHOOK_TOKEN = os.getenv('ASAAS_WEBHOOK_TOKEN', '').strip()
+ASAAS_PRODUCTION_ENABLED = os.getenv('ASAAS_PRODUCTION_ENABLED', '').strip().lower() == 'true'
+ASAAS_PRODUCTION_API_KEY = os.getenv('ASAAS_PRODUCTION_API_KEY', '').strip()
+ASAAS_PRODUCTION_WEBHOOK_TOKEN = os.getenv('ASAAS_PRODUCTION_WEBHOOK_TOKEN', '').strip()
 if MP_MODE not in {'off', 'test'}:
     raise ImproperlyConfigured('MP_MODE aceita off ou test. O checkout comercial ainda não está habilitado.')
 MP_TEST_SELLER_ID = os.getenv('MP_TEST_SELLER_ID', '').strip()

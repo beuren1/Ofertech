@@ -23,6 +23,7 @@ export type Billing = {
   pix_available?: boolean
   pix_selected?: boolean
   pix_legacy_paid?: boolean
+  pix_environment?: 'sandbox' | 'production' | null
   pix_customer_registered?: boolean
   pix_order?: PixOrder | null
   checkout_blockers?: string[]
@@ -36,6 +37,7 @@ export type Billing = {
 }
 
 export type PixOrder = {
+  environment?: 'sandbox' | 'production'
   id: string
   plan: Plan
   amount: string

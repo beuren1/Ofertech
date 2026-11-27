@@ -158,11 +158,14 @@ export function PixCheckoutPage() {
   }
 
   const selected = current?.plan ?? plan
+  const sandbox = (current?.environment ?? billing?.pix_environment) === 'sandbox'
+  const isProduction = (current?.environment ?? billing?.pix_environment) === 'production'
   return (
     <section className="mx-auto max-w-xl space-y-5 rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900 sm:p-8">
       <Link to="/plans" className="text-sm font-semibold text-indigo-700 dark:text-indigo-300">Voltar para planos</Link>
       <h1 className="text-3xl font-black">Pagamento Pix</h1>
-      <p className="text-sm text-slate-600 dark:text-slate-400">Ambiente de testes. Use dados fictícios válidos e simule o pagamento no Asaas Sandbox.</p>
+      {sandbox && <p className="text-sm text-slate-600 dark:text-slate-400">Ambiente de testes. Use dados fictícios válidos e simule o pagamento no Asaas Sandbox.</p>}
+      {isProduction && <p className="text-sm text-slate-600 dark:text-slate-400">Pagamento real processado pelo Asaas.</p>}
       {selected && <div>
         <h2 className="text-xl font-bold">{selected.name} · {currency.format(Number(current?.amount ?? selected.monthly_price))}</h2>
         <p>Pagamento avulso por 30 dias, sem renovação automática.</p>
@@ -186,11 +189,11 @@ export function PixCheckoutPage() {
         {current.status === 'approved' && current.paid_until && <p>Plano ativado e créditos liberados. O acesso pago termina em {date(current.paid_until)}.</p>}
         {current.status === 'processing' && <p>O Asaas ainda está confirmando a cobrança ou o recebimento.</p>}
         {canShowQr && pix && 'invoice_url' in pix && <div className="space-y-3">
-          <p>Abra a fatura do Asaas Sandbox para ver o QR Code e o Pix Copia e Cola. Acompanhe a confirmação do pagamento nesta página.</p>
-          <a href={pix.invoice_url} target="_blank" rel="noopener noreferrer" className={`inline-block ${primary}`}>Abrir fatura no Asaas Sandbox</a>
+          <p>Abra a fatura para ver o QR Code e o Pix Copia e Cola. Acompanhe a confirmação do pagamento nesta página.</p>
+          <a href={pix.invoice_url} target="_blank" rel="noopener noreferrer" className={`inline-block ${primary}`}>{isProduction ? 'Abrir fatura no Asaas' : 'Abrir fatura no Asaas Sandbox'}</a>
         </div>}
         {canShowQr && pix && 'payload' in pix && <div className="space-y-3">
-          <p>Escaneie o código ou copie o Pix para pagar. No sandbox, use a confirmação simulada do Asaas.</p>
+          <p>{sandbox ? 'No Sandbox, use a confirmação simulada do Asaas.' : 'Escaneie o código ou copie o Pix para pagar.'}</p>
           <img className="mx-auto w-52 max-w-full rounded-lg bg-white p-2" src={`data:image/png;base64,${pix.encoded_image}`} alt="QR Code Pix da cobrança" />
           <p className="text-sm">QR Code válido até {new Date(pix.expires_at).toLocaleString('pt-BR')}.</p>
           <label className="block text-sm font-semibold">Pix Copia e Cola

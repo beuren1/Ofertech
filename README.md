@@ -311,7 +311,7 @@ no fuso da aplicação, sem renovação automática.
    `python manage.py migrate` no backend de teste (o script do Render já
    executa migrações). Configure o frontend de homologação para usar a URL
    desse backend. O padrão `disabled` mantém o checkout Pix desligado.
-   O valor `production` também mantém o Pix bloqueado pelo código.
+   A produção exige credenciais distintas e a habilitação descrita abaixo.
 4. No painel **Sandbox** do Asaas, entre em **Integrações → Webhooks** e
    configure `https://<backend-de-homologacao>.onrender.com/api/billing/webhooks/asaas/`
    com API **v3** e o mesmo **Auth Token** do Render. Habilite
@@ -385,6 +385,75 @@ Para `401`, confira no Render a chave ativa do Sandbox, com o prefixo
 `$aact_hmlg_` completo e o `$` literal. Para `403`, confira as permissões
 e a lista de IPs autorizados da conta Asaas. [Autenticação Asaas](https://docs.asaas.com/docs/autentica%C3%A7%C3%A3o-1) ·
 [Códigos HTTP do Asaas](https://docs.asaas.com/reference/codigos-http-das-respostas)
+
+## Pix Asaas em produção
+
+A emissão real fica desativada por padrão. O backend usa o endpoint
+`https://api.asaas.com/v3` em produção e `https://api-sandbox.asaas.com/v3`
+em homologação. Use serviços e bancos PostgreSQL separados para operar os
+dois ambientes simultaneamente. A migração classifica os pedidos e eventos
+Pix existentes como Sandbox. O catálogo, os projetos, o saldo e o histórico
+existentes são preservados. [Ambientes da API Asaas](https://docs.asaas.com/reference/comece-por-aqui)
+
+| Variável do backend | Homologação | Produção |
+| --- | --- | --- |
+| `ASAAS_ENVIRONMENT` | `sandbox` | `production` |
+| `ASAAS_API_KEY` | Chave Sandbox existente | Reservada ao Sandbox |
+| `ASAAS_WEBHOOK_TOKEN` | Segredo Sandbox existente | Reservado ao Sandbox |
+| `ASAAS_PRODUCTION_ENABLED` | `false` | Comece com `false` |
+| `ASAAS_PRODUCTION_API_KEY` | Vazia | Chave ativa com prefixo `$aact_prod_` |
+| `ASAAS_PRODUCTION_WEBHOOK_TOKEN` | Vazio | Segredo próprio, aleatório, de 32 a 255 caracteres sem espaços |
+
+### Ativação manual
+
+1. Faça um backup consistente do PostgreSQL e confirme que pode restaurá-lo
+   em um banco separado. Registre o commit em uso e concilie pedidos Sandbox
+   em aberto antes de mudar o ambiente do serviço. Mantenha o Sandbox
+   em um serviço de homologação separado.
+2. Publique manualmente o backend com `ASAAS_PRODUCTION_ENABLED=false`.
+   Execute `python manage.py migrate` (o script de inicialização do Render
+   também executa a migração), confirme `python manage.py showmigrations
+   promoforge` e verifique `/api/health/`. Publique o frontend compatível
+   e aponte-o para o backend correspondente.
+3. Configure `ASAAS_ENVIRONMENT=production`, a chave e o segredo próprios
+   no Render. Preserve o `$` literal da chave. No painel **de produção** do
+   Asaas, cadastre a URL HTTPS final `/api/billing/webhooks/asaas/production/`
+   com o mesmo segredo no campo Auth Token e os mesmos tipos de eventos de
+   cobrança da homologação. Confirme que a conta tem uma chave Pix ativa.
+   [Autenticação](https://docs.asaas.com/docs/autentica%C3%A7%C3%A3o-1) ·
+   [Configurar webhook](https://docs.asaas.com/docs/criar-novo-webhook-pela-aplicacao-web)
+4. Com a emissão pausada, confirme a conectividade e a chave executando
+   no shell do backend `python manage.py shell -c "from promoforge import asaas; asaas.request('/customers', query={'limit': 1}); print('Asaas OK')"`.
+   O teste é de leitura e imprime apenas o resultado da conexão. Confirme
+   que uma entrega sem o token retorna `401` na rota de produção e que o
+   checkout continua indisponível. No Sandbox, execute a jornada simulada
+   completa, incluindo reenvio do webhook, valor divergente e estorno.
+5. Na janela de ativação autorizada, altere `ASAAS_PRODUCTION_ENABLED=true`
+   e confirme que o catálogo anuncia Pix. Monitore os logs do Render e
+   do Asaas nas primeiras compras. Para pausar novas cobranças, volte
+   a `false`, mantendo o ambiente, a chave e o webhook de produção para
+   conciliar as cobranças já emitidas. Preserve a migração e os registros
+   depois de aceitar pagamentos reais.
+
+### Vencimento, créditos e reembolsos
+
+- Uma cobrança de produção vence no dia seguinte à emissão, no fuso da
+  aplicação. O checkout usa a expiração do QR Code informada pelo Asaas e
+  deixa de exibi-lo após o vencimento ou a expiração. O vencimento local
+  não cancela a cobrança no provedor. Se ela ainda puder ser paga e o Asaas
+  confirmar o recebimento, a Ofertech concilia o pagamento. Em caso de falha
+  no QR Code, a fatura vem da própria cobrança validada e só pode ser aberta
+  no domínio de faturas do ambiente correspondente.
+- Pro custa R$ 19,99 por 30 dias e concede 200 créditos. Business custa
+  R$ 39,99 por 30 dias e concede 1.000 créditos. Um Pix recebido soma a cota
+  ao saldo. Renovar antecipadamente o mesmo plano estende o acesso em 30
+  dias dentro do mesmo ambiente. A troca de plano começa um novo período
+  na confirmação. Nenhuma compra renova automaticamente.
+- A Ofertech confere o pagamento na API e libera créditos somente em
+  `RECEIVED`. O estorno integral retira uma vez o saldo ainda disponível
+  daquela compra e restaura o período anterior elegível no mesmo ambiente.
+  Estornos parciais, disputas e estornos em processamento ficam em análise.
+  A solicitação de devolução financeira é tratada no Asaas pelo operador.
 
 ## Mercado Pago em teste
 

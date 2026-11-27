@@ -53,6 +53,7 @@ urlpatterns = [
     path('billing/pix/<uuid:order_id>/', PixOrderView.as_view()),
     path('billing/pix/<uuid:order_id>/<str:action>/', PixOrderView.as_view()),
     path('billing/webhooks/asaas/', AsaasWebhookView.as_view()),
+    path('billing/webhooks/asaas/production/', AsaasWebhookView.as_view(), {'environment': 'production'}),
     path('billing/artworks/', ArtworkCreditsView.as_view()),
     path('billing/operations/', CreditOperationView.as_view()),
     path('billing/webhooks/mercado-pago/', MercadoPagoWebhookView.as_view()),

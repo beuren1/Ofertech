@@ -50,6 +50,7 @@ def billing_account(user, *, refresh_allowance=True):
         if expired:
             account.plan_id = 'free'
             account.cancel_at_period_end = False
+            account.paid_pix_order = None
         if account.plan_id == 'free' and (expired or account.period is None or account.period < period):
             account.period = period
             account.monthly_limit = account.plan.monthly_credits
@@ -123,7 +124,8 @@ class BillingView(APIView):
             pix_available = pix_enabled()
             pix_selected = settings.ASAAS_ENVIRONMENT != 'disabled'
             blockers = [] if pix_selected else checkout_blockers(request.user)
-            pix_order = account.pix_orders.filter(open=True).select_related('plan').first()
+            pix_orders = account.pix_orders.filter(environment=settings.ASAAS_ENVIRONMENT)
+            pix_order = pix_orders.filter(open=True).select_related('plan').first()
             return Response({
                 'plan': plan_data(account.plan), 'credits': account.credits,
                 'monthly_limit': account.monthly_limit, 'used': used,
@@ -133,7 +135,8 @@ class BillingView(APIView):
                 'pix_available': pix_available,
                 'pix_selected': pix_selected,
                 'pix_legacy_paid': legacy_paid(account),
-                'pix_customer_registered': account.pix_orders.exists() if pix_available else False,
+                'pix_customer_registered': pix_orders.exists() if pix_available else False,
+                'pix_environment': settings.ASAAS_ENVIRONMENT if pix_selected else None,
                 'pix_order': order_data(pix_order) if pix_order else None,
                 'subscription_plan': change.plan_id if change else None,
                 'subscription_status': change.status if change else None,

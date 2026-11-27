@@ -35,7 +35,7 @@ class PixOrderView(APIView):
 
     def post(self, request, order_id, action):
         order = self.order(request, order_id)
-        if not asaas.enabled():
+        if not asaas.configured():
             raise asaas.AsaasUnavailable()
         take_or_throttle('pix-provider', request.user.pk, (8, 60))
         if action == 'qr':
@@ -49,7 +49,7 @@ class PixOrderView(APIView):
     def order(self, request, order_id):
         return get_object_or_404(
             PixOrder.objects.select_related('subscription__user', 'plan'),
-            pk=order_id, subscription__user=request.user,
+            pk=order_id, subscription__user=request.user, environment=settings.ASAAS_ENVIRONMENT,
         )
 
 
@@ -57,9 +57,9 @@ class AsaasWebhookView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
 
-    def post(self, request):
+    def post(self, request, environment='sandbox'):
         token = request.headers.get('asaas-access-token', '')
-        if not pix_billing.verify_token(token, settings.ASAAS_WEBHOOK_TOKEN):
+        if not pix_billing.verify_token(token, environment):
             take_or_throttle('pix-webhook-invalid', client_ip(request), (30, 60))
             return Response(status=401)
         data = request.data

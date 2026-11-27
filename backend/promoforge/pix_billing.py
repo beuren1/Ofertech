@@ -3,6 +3,7 @@ from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 from uuid import NAMESPACE_URL, UUID, uuid5
 
+from django.conf import settings
 from django.utils import timezone
 from django.utils.crypto import constant_time_compare, salted_hmac
 from django.utils.dateparse import parse_datetime
@@ -57,16 +58,19 @@ def legacy_paid(account):
 
 
 def order_id_for(user, key):
-    return uuid5(NAMESPACE_URL, f'ofertech/pix/{user.pk}/{key}')
+    scope = 'ofertech/pix/production' if settings.ASAAS_ENVIRONMENT == 'production' else 'ofertech/pix'
+    return uuid5(NAMESPACE_URL, f'{scope}/{user.pk}/{key}')
 
 
 def customer_for(account, data):
-    known = account.pix_orders.order_by('-created_at').values_list('customer_id', flat=True).first()
+    environment = settings.ASAAS_ENVIRONMENT
+    known = account.pix_orders.filter(environment=environment).order_by('-created_at').values_list('customer_id', flat=True).first()
     if known:
         return known
     if not data.get('name') or not data.get('document'):
         raise ValidationError('Informe o nome e o CPF ou CNPJ do pagador.')
-    reference = 'ofertech-customer-' + salted_hmac('asaas-customer', str(account.user_id)).hexdigest()
+    salt = 'asaas-customer-production' if environment == 'production' else 'asaas-customer'
+    reference = 'ofertech-customer-' + salted_hmac(salt, str(account.user_id)).hexdigest()
     customer = asaas.find_by_reference('/customers', reference)
     creating = customer is None
     if creating:
@@ -90,8 +94,10 @@ def start_order(user, plan, data):
     if not asaas.enabled():
         raise asaas.AsaasUnavailable()
     with billing_account(user) as account:
+        environment = settings.ASAAS_ENVIRONMENT
+        orders = account.pix_orders.filter(environment=environment)
         order_id = order_id_for(user, data['key'])
-        existing = account.pix_orders.filter(pk=order_id).first() or account.pix_orders.filter(open=True).first()
+        existing = orders.filter(pk=order_id).first() or orders.filter(open=True).first()
         if existing:
             if existing.plan_id == plan.pk:
                 return existing
@@ -100,7 +106,8 @@ def start_order(user, plan, data):
             raise PixConflict('A conta tem uma assinatura, uma solicitação ou um período pago do Mercado Pago em vigor.')
         order = account.pix_orders.create(
             id=order_id, plan=plan, amount=plan.monthly_price, credits=plan.monthly_credits,
-            customer_id=customer_for(account, data), due_on=timezone.localdate(),
+            customer_id=customer_for(account, data), environment=environment,
+            due_on=timezone.localdate() + timedelta(days=1 if environment == 'production' else 0),
         )
     # The order is durable before the only POST. An ambiguous failure can be
     # reconciled by external reference without sending a second charge request.
@@ -173,7 +180,10 @@ def payment_status(payment, amount):
 
 def activate(account, order):
     today = timezone.localdate()
-    if account.plan_id == order.plan_id and account.paid_until and account.paid_until > today:
+    if (
+        account.paid_pix_order_id and account.paid_pix_order.environment == order.environment
+        and account.plan_id == order.plan_id and account.paid_until and account.paid_until > today
+    ):
         starts = account.paid_until
     else:
         starts = today
@@ -181,6 +191,7 @@ def activate(account, order):
     account.plan_id = order.plan_id
     account.paid_until = order.paid_until
     account.paid_change = None
+    account.paid_pix_order = order
     account.cancel_at_period_end = False
     account.period = today.replace(day=1)
     account.monthly_limit = order.credits
@@ -227,10 +238,10 @@ def reverse(account, order):
         return
     amount = min(account.credits, remaining_grant(history, grant))
     account.credits -= amount
-    if account.paid_change_id is None and account.plan_id == order.plan_id and account.paid_until == order.paid_until:
+    if account.paid_pix_order_id == order.pk:
         previous = None
         eligible = {f'pix:{item.pk}': item for item in account.pix_orders.filter(
-            status='approved', paid_until__gt=timezone.localdate(),
+            environment=order.environment, status='approved', paid_until__gt=timezone.localdate(),
         ).exclude(pk=order.pk)}
         for grant_key in history.filter(pk__lt=grant.pk, key__startswith='pix:').order_by('-pk').values_list('key', flat=True):
             if grant_key in eligible:
@@ -238,19 +249,23 @@ def reverse(account, order):
                 break
         account.plan_id = previous.plan_id if previous else 'free'
         account.paid_until = previous.paid_until if previous else None
+        account.paid_pix_order = previous
         account.monthly_limit = previous.credits if previous else account.plan.monthly_credits
-    account.save(update_fields=['credits', 'plan', 'paid_until', 'monthly_limit'])
+    account.save(update_fields=['credits', 'plan', 'paid_until', 'monthly_limit', 'paid_pix_order'])
     CreditMovement.objects.create(
         subscription=account, key=refund_key, kind='pix_refund', amount=-amount, balance=account.credits,
     )
 
 
 def reconcile(order, *, event_id=None, payment_id=None, cancel=False):
+    if order.environment != settings.ASAAS_ENVIRONMENT:
+        raise asaas.AsaasUnavailable()
+    event_key = f'{order.environment}:{event_id}' if event_id else None
     # Serialize the provider read and local writes for this account so two
     # workers cannot apply provider snapshots in reverse order.
     with billing_account(order.subscription.user) as account:
         order.refresh_from_db()
-        if event_id and PixWebhookEvent.objects.filter(pk=event_id).exists():
+        if event_key and PixWebhookEvent.objects.filter(pk=event_key).exists():
             return order
         remote_id = payment_id or order.payment_id
         if not remote_id:
@@ -281,8 +296,8 @@ def reconcile(order, *, event_id=None, payment_id=None, cancel=False):
         order.status = status
         order.open = order.open and status not in CLOSED_STATES
         order.save(update_fields=['payment_id', 'status', 'open', 'paid_until'])
-        if event_id:
-            PixWebhookEvent.objects.get_or_create(pk=event_id, defaults={'order': order})
+        if event_key:
+            PixWebhookEvent.objects.get_or_create(pk=event_key, defaults={'order': order})
         return order
 
 
@@ -290,26 +305,34 @@ def webhook_order(payment):
     remote_id = payment.get('id')
     if not asaas.resource_id(remote_id, 'pay'):
         return None
-    order = PixOrder.objects.filter(payment_id=remote_id).first()
+    environment = settings.ASAAS_ENVIRONMENT
+    orders = PixOrder.objects.filter(environment=environment)
+    order = orders.filter(payment_id=remote_id).first()
     reference = payment.get('externalReference')
-    if order or not isinstance(reference, str) or not reference.startswith(REFERENCE_PREFIX):
+    prefix = 'ofertech-pix-prod-' if environment == 'production' else REFERENCE_PREFIX
+    if order or not isinstance(reference, str) or not reference.startswith(prefix):
         return order
     try:
-        key = UUID(reference.removeprefix(REFERENCE_PREFIX))
+        key = UUID(reference.removeprefix(prefix))
     except ValueError:
         return None
-    return PixOrder.objects.filter(pk=key, payment_id__isnull=True, open=True).first()
+    return orders.filter(pk=key, payment_id__isnull=True, open=True).first()
 
 
-def verify_token(token, expected):
-    return asaas.enabled() and constant_time_compare(token, expected)
+def verify_token(token, environment):
+    return (
+        environment == settings.ASAAS_ENVIRONMENT and asaas.configured()
+        and constant_time_compare(token, asaas.credentials()[1])
+    )
 
 
 def order_data(order):
     qr_expired = order.qr_expires_at and order.qr_expires_at <= timezone.now()
+    overdue = order.environment == 'production' and timezone.localdate() > order.due_on
     return {
         'id': order.pk, 'plan': plan_data(order.plan), 'amount': str(order.amount), 'currency': 'BRL',
-        'status': 'expired' if order.status == 'waiting' and qr_expired else order.status,
+        'environment': order.environment,
+        'status': 'expired' if order.status == 'waiting' and (qr_expired or overdue) else order.status,
         'due_on': order.due_on, 'qr_expires_at': order.qr_expires_at, 'paid_until': order.paid_until,
         'can_cancel': order.open and order.status in {'waiting', 'expired'},
         'open': order.open,
@@ -321,14 +344,16 @@ def invoice_fallback(order, path):
     validate_payment(order, payment, order.payment_id)
     if payment_status(payment, order.amount) != 'waiting':
         raise PixConflict('Esta cobrança não está aguardando um pagamento Pix. Consulte a situação do pedido.')
-    url = asaas.sandbox_invoice_url(payment.get('invoiceUrl'))
+    url = asaas.invoice_url(payment.get('invoiceUrl'), order.environment)
     if url is None:
-        asaas.log_failure('GET /payments/{id}', 'invalid_sandbox_invoice_url')
+        asaas.log_failure('GET /payments/{id}', 'invalid_invoice_url')
         raise asaas.AsaasError()
     return {'invoice_url': url}
 
 
 def get_qr(order):
+    if order.environment != settings.ASAAS_ENVIRONMENT:
+        raise asaas.AsaasUnavailable()
     if not order.open or order_data(order)['status'] != 'waiting' or not asaas.resource_id(order.payment_id, 'pay'):
         raise PixConflict('Esta cobrança não está aguardando um pagamento Pix.')
     path = f'/payments/{order.payment_id}'

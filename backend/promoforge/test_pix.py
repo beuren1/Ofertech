@@ -168,7 +168,7 @@ class PixCheckoutTests(TestCase):
         self.assertEqual(self.account().credits, 210)
         self.assertEqual(self.account().paid_until, timezone.localdate() + timedelta(days=30))
         self.assertEqual(CreditMovement.objects.filter(key=f'pix:{self.order_id}').count(), 1)
-        self.assertEqual(PixWebhookEvent.objects.filter(pk='evt_paid').count(), 1)
+        self.assertEqual(PixWebhookEvent.objects.filter(pk='sandbox:evt_paid').count(), 1)
         self.assertEqual(self.create().data['id'], self.order_id)
 
     def test_rejects_inconsistent_provider_response(self):
