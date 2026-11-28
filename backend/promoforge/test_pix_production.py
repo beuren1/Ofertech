@@ -22,8 +22,8 @@ WEBHOOK = '/api/billing/webhooks/asaas/production/'
 
 @override_settings(
     ASAAS_ENVIRONMENT='production',
-    ASAAS_API_KEY=SANDBOX_KEY,
-    ASAAS_WEBHOOK_TOKEN=SANDBOX_TOKEN,
+    ASAAS_API_KEY='',
+    ASAAS_WEBHOOK_TOKEN='',
     ASAAS_PRODUCTION_ENABLED=True,
     ASAAS_PRODUCTION_API_KEY=PRODUCTION_KEY,
     ASAAS_PRODUCTION_WEBHOOK_TOKEN=PRODUCTION_TOKEN,
@@ -69,9 +69,10 @@ class ProductionPixTests(TestCase):
         for configuration in (
             {'ASAAS_PRODUCTION_ENABLED': False},
             {'ASAAS_PRODUCTION_API_KEY': SANDBOX_KEY},
-            {'ASAAS_PRODUCTION_WEBHOOK_TOKEN': SANDBOX_TOKEN},
+            {'ASAAS_PRODUCTION_WEBHOOK_TOKEN': SANDBOX_TOKEN, 'ASAAS_WEBHOOK_TOKEN': SANDBOX_TOKEN},
             {'ASAAS_PRODUCTION_WEBHOOK_TOKEN': PRODUCTION_KEY},
             {'ASAAS_PRODUCTION_API_KEY': ''},
+            {'ASAAS_PRODUCTION_WEBHOOK_TOKEN': ''},
         ):
             with self.subTest(configuration=configuration), override_settings(**configuration):
                 with patch('promoforge.asaas.build_opener') as opener:
@@ -125,6 +126,7 @@ class ProductionPixTests(TestCase):
             self.assertEqual(self.client.post(qr_endpoint).data['invoice_url'], self.payment['invoiceUrl'])
             self.payment['invoiceUrl'] = 'https://sandbox.asaas.com/i/other-environment'
             self.assertEqual(self.client.post(qr_endpoint).status_code, 502)
+            self.assertEqual(self.hook(token='').status_code, 401)
             self.assertEqual(self.hook(token=SANDBOX_TOKEN).status_code, 401)
             self.assertEqual(self.hook(url='/api/billing/webhooks/asaas/').status_code, 401)
             self.assertEqual(self.hook(event_id='evt_pending').status_code, 200)

@@ -371,7 +371,7 @@ class PixCheckoutTests(TestCase):
 
 @override_settings(ASAAS_API_KEY='test-key', ASAAS_WEBHOOK_TOKEN=TOKEN)
 class AsaasTransportTests(TestCase):
-    @override_settings(ASAAS_ENVIRONMENT='production')
+    @override_settings(ASAAS_ENVIRONMENT='production', ASAAS_PRODUCTION_API_KEY='')
     def test_production_is_blocked_without_opening_a_connection(self):
         with patch('promoforge.asaas.build_opener') as opener:
             with self.assertRaises(asaas.AsaasUnavailable):
